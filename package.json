@@ -1,0 +1,18 @@
+{
+  "name": "gy-lucid",
+  "license": "MIT",
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts",
+    "lint": "tsc",
+    "test": "vitest"
+  },
+  "devDependencies": {
+    "tsup": "^8.0.2",
+    "typedoc": "^0.25.13",
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.0"
+  },
+  "dependencies": {
+    "@anastasia-labs/lucid-cardano-fork": "^0.10.7"
+  }
+}
