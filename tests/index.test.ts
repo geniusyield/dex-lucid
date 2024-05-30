@@ -6,9 +6,11 @@ import { test, expect } from 'vitest'
   return this.toString();
 };
 
+const maestroMainnetKey = import.meta.env.VITE_MAESTRO_MAINNET_KEY as string;
+
 test('fetchPartialOrderConfig', async () => {
   const lucid = await Lucid.new(
-    new Maestro({ network: "Mainnet", apiKey: import.meta.env.VITE_MAESTRO_KEY as string, turboSubmit: false }),
+    new Maestro({ network: "Mainnet", apiKey: maestroMainnetKey, turboSubmit: false }),
     "Mainnet",
   );
   const partialOrderConfigDatum = await fetchPartialOrderConfig(lucid)
