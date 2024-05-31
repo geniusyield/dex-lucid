@@ -8,20 +8,24 @@ export const OutputReferenceSchema = Data.Object({
   txHash: Data.Object({ hash: Data.Bytes({ minLength: 32, maxLength: 32 }) }),
   outputIndex: Data.Integer(),
 });
-export type OutputReference = Data.Static<typeof OutputReferenceSchema>;
-export const OutputReference =
-  OutputReferenceSchema as unknown as OutputReference;
+export type OutputReferenceD = Data.Static<typeof OutputReferenceSchema>;
+export const OutputReferenceD =
+  OutputReferenceSchema as unknown as OutputReferenceD;
+
+export const PONftPolicyRedeemerSchema = Data.Nullable(OutputReferenceSchema);
+export type PONftPolicyRedeemer = Data.Static<typeof PONftPolicyRedeemerSchema>;
+export const PONftPolicyRedeemer = PONftPolicyRedeemerSchema as unknown as PONftPolicyRedeemer;
+
+export const PubKeyHashSchema = Data.Bytes({ minLength: 28, maxLength: 28 });
+export type PubKeyHashD = Data.Static<typeof PubKeyHashSchema>;
+export const PubKeyHashD = PubKeyHashSchema as unknown as PubKeyHashD;
 
 export const CredentialSchema = Data.Enum([
   Data.Object({
-    PublicKeyCredential: Data.Tuple([
-      Data.Bytes({ minLength: 28, maxLength: 28 }),
-    ]),
+    PublicKeyCredential: Data.Tuple([PubKeyHashSchema]),
   }),
   Data.Object({
-    ScriptCredential: Data.Tuple([
-      Data.Bytes({ minLength: 28, maxLength: 28 }),
-    ]),
+    ScriptCredential: Data.Tuple([PubKeyHashSchema]),
   }),
 ]);
 export type CredentialD = Data.Static<typeof CredentialSchema>;
@@ -65,14 +69,13 @@ export const ValueSchema = Data.Map(
   Data.Bytes(),
   Data.Map(Data.Bytes(), Data.Integer())
 );
-export type Value = Data.Static<typeof ValueSchema>;
-export const Value = ValueSchema as unknown as Value;
+export type ValueD = Data.Static<typeof ValueSchema>;
+export const ValueD = ValueSchema as unknown as ValueD;
 
 
 // TODO: Add documentation (also for other types).
-// TODO: Isolate type for PubKeyHash (28 bytes), etc.
 export const PartialOrderConfigDatumSchema = Data.Object({
-  pocdSignatories: Data.Array(Data.Bytes()),
+  pocdSignatories: Data.Array(PubKeyHashSchema),
   pocdReqSignatores: Data.Integer(),
   pocdNftSymbol: Data.Bytes(),
   pocdFeeAddr: AddressSchema,
@@ -83,3 +86,45 @@ export const PartialOrderConfigDatumSchema = Data.Object({
 })
 export type PartialOrderConfigDatum = Data.Static<typeof PartialOrderConfigDatumSchema>;
 export const PartialOrderConfigDatum = PartialOrderConfigDatumSchema as unknown as PartialOrderConfigDatum;
+
+export const PartialOrderContainedFeeSchema = Data.Object({
+  pocfLovelaces: Data.Integer(),
+  pocfOfferedTokens: Data.Integer(),
+  pocfAskedTokens: Data.Integer()
+})
+export type PartialOrderContainedFee = Data.Static<typeof PartialOrderContainedFeeSchema>;
+export const PartialOrderContainedFee = PartialOrderContainedFeeSchema as unknown as PartialOrderContainedFee;
+
+export const PartialOrderFeeOutputSchema = Data.Object({
+  pofdMentionedFees: Data.Map(Data.Bytes(), ValueSchema),
+  pofdReservedValue: ValueSchema,
+  pofdSpentUTxORef: Data.Nullable(OutputReferenceSchema)
+})
+export type PartialOrderFeeOutput = Data.Static<typeof PartialOrderFeeOutputSchema>;
+export const PartialOrderFeeOutput = PartialOrderFeeOutputSchema as unknown as PartialOrderFeeOutput;
+
+export const POSIXTimeSchema = Data.Integer();
+export type POSIXTimeD = Data.Static<typeof POSIXTimeSchema>;
+export const POSIXTimeD = POSIXTimeSchema as unknown as POSIXTimeD;
+
+// TODO: Need to check posix time in general, write test case for it.
+export const PartialOrderDatumSchema = Data.Object({
+  podOwnerKey: PubKeyHashSchema,
+  podOwnerAddr: AddressSchema,
+  podOfferedAsset: AssetClassSchema,
+  podOfferedOriginalAmount: Data.Integer(),
+  podOfferedAmount: Data.Integer(),
+  podAskedAsset: AssetClassSchema,
+  podPrice: RationalSchema,
+  podNFT: Data.Bytes(),
+  podStart: Data.Nullable(POSIXTimeSchema),
+  podEnd: Data.Nullable(POSIXTimeSchema),
+  podPartialFills: Data.Integer(),
+  podMakerLovelaceFlatFee: Data.Integer(),
+  podTakerLovelaceFlatFee: Data.Integer(),
+  podContainedFee: PartialOrderContainedFeeSchema,
+  podContainedPayment: Data.Integer()
+})
+export type PartialOrderDatum = Data.Static<typeof PartialOrderDatumSchema>;
+export const PartialOrderDatum = PartialOrderDatumSchema as unknown as PartialOrderDatum;
+

@@ -1,5 +1,5 @@
 import { Lucid, Maestro } from "@anastasia-labs/lucid-cardano-fork";
-import { fetchPartialOrderConfig } from '../src/index'
+import { fetchPartialOrderConfig, decimalToHexByte, expectedTokenName, poMintRef } from '../src/index'
 import { test, expect } from 'vitest'
 
 (BigInt.prototype as any).toJSON = function () {
@@ -13,7 +13,7 @@ test('fetchPartialOrderConfig', async () => {
     new Maestro({ network: "Mainnet", apiKey: maestroMainnetKey, turboSubmit: false }),
     "Mainnet",
   );
-  const partialOrderConfigDatum = await fetchPartialOrderConfig(lucid)
+  const partialOrderConfigDatum = (await fetchPartialOrderConfig(lucid))[0]
   expect(JSON.stringify(partialOrderConfigDatum)).toBe(JSON.stringify({
     pocdSignatories: [
       'f43138a5c2f37cc8c074c90a5b347d7b2b3ebf729a44b9bbdc883787',
@@ -33,3 +33,26 @@ test('fetchPartialOrderConfig', async () => {
     pocdMinDeposit: 2100000n
   }))
 });
+
+test('decimalToHexByte', async () => {
+  expect(decimalToHexByte(12)).toBe('0c')
+  expect(decimalToHexByte(255)).toBe('ff')
+  expect(() => decimalToHexByte(256)).toThrowError('Number out of byte range (0-255)')
+  expect(() => decimalToHexByte(-1)).toThrowError('Number out of byte range (0-255)')
+  expect(decimalToHexByte(0)).toBe('00')
+  expect(() => decimalToHexByte(1.1)).toThrowError('Decimal must be an integer')
+})
+
+test('expectedTokenName', async () => {
+  const outRef = { txHash: 'a289a5738885a41bdaadee7683c63cd1ee3564770718f4f00bfb46187a417f01', outputIndex: 3 }
+  expect(await expectedTokenName(outRef)).toBe('35238425954900b4fa8b55c6d80d51c73f1e221f6c02543e2250712f509cb002')
+})
+
+test('nftMintUTxO is correct', async () => {
+  const lucid = await Lucid.new(
+    new Maestro({ network: "Mainnet", apiKey: maestroMainnetKey, turboSubmit: false }),
+    "Mainnet",
+  );
+  const nftMintUTxO = await lucid.utxosByOutRef([poMintRef])
+  console.log(nftMintUTxO)
+})
