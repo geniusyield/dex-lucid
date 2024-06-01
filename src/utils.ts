@@ -1,5 +1,6 @@
 import { Address, Lucid, OutRef, Unit, fromHex, fromUnit, getAddressDetails, toHex } from "@anastasia-labs/lucid-cardano-fork";
 import { AddressD, AssetClassD, OutputReferenceD } from "./contract.types";
+import { PartialOrderConstants, po } from "./constants";
 
 
 /**
@@ -111,5 +112,22 @@ export function assetClassDFromUnit(unit: Unit): AssetClassD {
   return {
     symbol: policyId,
     name: assetName ?? "",
+  }
+}
+
+/**
+ * Resolves the PartialOrderConstants based on the provided Lucid network.
+ * @param lucid - The Lucid object containing the network information.
+ * @returns The PartialOrderConstants object corresponding to the Lucid network.
+ * @throws {Error} If the Lucid network is unsupported.
+ */
+export function resolvePOConstants(lucid: Lucid): PartialOrderConstants {
+  const nid = lucid.network
+  if (nid === 'Mainnet') {
+    return po.mainnet
+  } else if (nid === 'Preprod') {
+    return po.preprod
+  } else {
+    throw new Error(`Unsupported network: ${nid}`)
   }
 }

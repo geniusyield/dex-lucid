@@ -1,5 +1,5 @@
-import { Lucid, Maestro } from "@anastasia-labs/lucid-cardano-fork";
-import { fetchPartialOrderConfig, decimalToHexByte, expectedTokenName, poMintRef } from '../src/index'
+import { Lucid, Maestro, UTxO } from "@anastasia-labs/lucid-cardano-fork";
+import { fetchPartialOrderConfig, decimalToHexByte, expectedTokenName, createOrder } from '../src/index'
 import { test, expect } from 'vitest'
 
 (BigInt.prototype as any).toJSON = function () {
@@ -7,12 +7,20 @@ import { test, expect } from 'vitest'
 };
 
 const maestroMainnetKey = import.meta.env.VITE_MAESTRO_MAINNET_KEY as string;
+const maestroPreprodKey = import.meta.env.VITE_MAESTRO_PREPROD_KEY as string;
+const walletPreprodSeedPhrase = import.meta.env.VITE_PREPROD_SEED_PHRASE as string;
+
+const lucidMainnet = await Lucid.new(
+  new Maestro({ network: "Mainnet", apiKey: maestroMainnetKey, turboSubmit: false }),
+  "Mainnet",
+);
+const lucidPreprod = await Lucid.new(
+  new Maestro({ network: "Preprod", apiKey: maestroPreprodKey, turboSubmit: false }),
+  "Preprod",
+);
 
 test('fetchPartialOrderConfig', async () => {
-  const lucid = await Lucid.new(
-    new Maestro({ network: "Mainnet", apiKey: maestroMainnetKey, turboSubmit: false }),
-    "Mainnet",
-  );
+  const lucid = lucidMainnet
   const partialOrderConfigDatum = (await fetchPartialOrderConfig(lucid))[0]
   expect(JSON.stringify(partialOrderConfigDatum)).toBe(JSON.stringify({
     pocdSignatories: [
@@ -48,11 +56,16 @@ test('expectedTokenName', async () => {
   expect(await expectedTokenName(outRef)).toBe('35238425954900b4fa8b55c6d80d51c73f1e221f6c02543e2250712f509cb002')
 })
 
-test('nftMintUTxO is correct', async () => {
-  const lucid = await Lucid.new(
-    new Maestro({ network: "Mainnet", apiKey: maestroMainnetKey, turboSubmit: false }),
-    "Mainnet",
-  );
-  const nftMintUTxO = await lucid.utxosByOutRef([poMintRef])
-  console.log(nftMintUTxO)
+test('createOrder', async () => {
+  console.log(walletPreprodSeedPhrase)
+  lucidPreprod.selectWalletFromSeed(walletPreprodSeedPhrase)
+  const walletUTxOs = await lucidPreprod.utxosAt(await lucidPreprod.wallet.address())
+  console.log(walletUTxOs)
+  const tx = await createOrder(lucidPreprod, lucidPreprod.newTx(), walletUTxOs[0] as UTxO, await lucidPreprod.wallet.address(), 1000000n, "", "a2376874f7e559fbf4e41830c83058d46d8eeb8cb8cf0d94ab15a16e47454e53", { numerator: 10n, denominator: 5n }, { type: "Key", hash: "7a77d120b9e86addc7388dbbb1bd2350490b7d140ab234038632334d" }, undefined, undefined)
+
+  const completeTx = await tx.complete()
+  console.log(completeTx)
+  // const signedTx = await (await tx.complete()).sign().complete()
+  // const txHash = await signedTx.submit()
+  // console.log(txHash)
 })
