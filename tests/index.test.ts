@@ -57,15 +57,12 @@ test('expectedTokenName', async () => {
 })
 
 test('createOrder', async () => {
-  console.log(walletPreprodSeedPhrase)
   lucidPreprod.selectWalletFromSeed(walletPreprodSeedPhrase)
   const walletUTxOs = await lucidPreprod.utxosAt(await lucidPreprod.wallet.address())
-  console.log(walletUTxOs)
-  const tx = await createOrder(lucidPreprod, lucidPreprod.newTx(), walletUTxOs[0] as UTxO, await lucidPreprod.wallet.address(), 1000000n, "", "a2376874f7e559fbf4e41830c83058d46d8eeb8cb8cf0d94ab15a16e47454e53", { numerator: 10n, denominator: 5n }, { type: "Key", hash: "7a77d120b9e86addc7388dbbb1bd2350490b7d140ab234038632334d" }, undefined, undefined)
-
-  const completeTx = await tx.complete()
-  console.log(completeTx)
-  // const signedTx = await (await tx.complete()).sign().complete()
-  // const txHash = await signedTx.submit()
-  // console.log(txHash)
+  const walletAddress = await lucidPreprod.wallet.address()
+  const { stakeCredential } = lucidPreprod.utils.getAddressDetails(walletAddress)
+  const tx = await createOrder(lucidPreprod, lucidPreprod.newTx(), walletUTxOs[0] as UTxO, await lucidPreprod.wallet.address(), 1000000n, "", "a2376874f7e559fbf4e41830c83058d46d8eeb8cb8cf0d94ab15a16e47454e53", { numerator: 10n, denominator: 5n }, false, stakeCredential, undefined, undefined)
+  const signedTx = await (await tx.complete()).sign().complete()
+  const txHash = await signedTx.submit()
+  console.log(txHash)
 })

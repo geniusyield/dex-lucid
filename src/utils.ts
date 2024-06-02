@@ -1,4 +1,4 @@
-import { Address, Lucid, OutRef, Unit, fromHex, fromUnit, getAddressDetails, toHex } from "@anastasia-labs/lucid-cardano-fork";
+import { Address, Assets, Lucid, OutRef, Unit, fromHex, fromUnit, getAddressDetails, toHex } from "@anastasia-labs/lucid-cardano-fork";
 import { AddressD, AssetClassD, OutputReferenceD } from "./contract.types";
 import { PartialOrderConstants, po } from "./constants";
 
@@ -130,4 +130,44 @@ export function resolvePOConstants(lucid: Lucid): PartialOrderConstants {
   } else {
     throw new Error(`Unsupported network: ${nid}`)
   }
+}
+
+/**
+ * Resolves an offer asset class based on the unit and amount provided.
+ * If the unit is an empty string, it returns an object with the amount in lovelace.
+ * Otherwise, it returns an object with the unit as the key and the amount as the value.
+ * @param unit The unit of the asset.
+ * @param amt The amount of the asset.
+ * @returns An object representing the resolved asset class.
+ */
+export function resolveOfferAC(unit: Unit, amt: bigint): Assets {
+  if (unit === '') {
+    return { lovelace: amt }
+  } else {
+    return { [unit]: amt }
+  }
+}
+
+/**
+ * Merges two asset objects together by adding or appending the quantities of each asset.
+ * @param a1 - The first asset object.
+ * @param a2 - The second asset object.
+ * @returns A new asset object that contains the merged assets.
+ */
+export function mappendAssets(a1: Assets, a2: Assets) {
+  const a2Entries = Object.entries(a2);
+
+  // initialize with clone of a1
+  const result: Assets = { ...a1 };
+
+  // add or append entries from a2
+  a2Entries.forEach(([key, quantity]) => {
+    if (result[key]) {
+      result[key] += quantity;
+    } else {
+      result[key] = quantity;
+    }
+  });
+
+  return result;
 }
