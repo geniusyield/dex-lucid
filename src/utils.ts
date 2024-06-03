@@ -1,5 +1,5 @@
-import { Address, Assets, Lucid, OutRef, Unit, fromHex, fromUnit, getAddressDetails, toHex } from "@anastasia-labs/lucid-cardano-fork";
-import { AddressD, AssetClassD, OutputReferenceD } from "./contract.types";
+import { Address, Assets, Lucid, OutRef, Unit, fromHex, fromUnit, getAddressDetails, toHex, toUnit } from "@anastasia-labs/lucid-cardano-fork";
+import { AddressD, AssetClassD, OutputReferenceD, PartialOrderContainedFee, ValueD } from "./contract.types";
 import { PartialOrderConstants, po } from "./constants";
 
 
@@ -115,6 +115,11 @@ export function assetClassDFromUnit(unit: Unit): AssetClassD {
   }
 }
 
+export function assetClassDToUnit(ac: AssetClassD): Unit {
+  if (ac.symbol === "") return "lovelace"
+  return toUnit(ac.symbol, ac.name)
+}
+
 /**
  * Resolves the PartialOrderConstants based on the provided Lucid network.
  * @param lucid - The Lucid object containing the network information.
@@ -169,5 +174,65 @@ export function mappendAssets(a1: Assets, a2: Assets) {
     }
   });
 
+  return result;
+}
+
+/**
+ * Negates the amounts of each asset in the given `Assets` object.
+ * @param assets - The `Assets` object to negate.
+ * @returns A new `Assets` object with negated amounts.
+ */
+export function negateAssets(assets: Assets): Assets {
+  const result: Assets = {};
+  for (const [unit, amount] of Object.entries(assets)) {
+    result[unit] = -amount;
+  }
+  return result;
+}
+
+export const zeroContainedFee: PartialOrderContainedFee = {
+  pocfLovelaces: 0n,
+  pocfOfferedTokens: 0n,
+  pocfAskedTokens: 0n,
+};
+
+export function isEqualContainedFee(fee1: PartialOrderContainedFee, fee2: PartialOrderContainedFee): boolean {
+  return (fee1.pocfLovelaces === fee2.pocfLovelaces &&
+    fee1.pocfOfferedTokens === fee2.pocfOfferedTokens &&
+    fee1.pocfAskedTokens === fee2.pocfAskedTokens);
+}
+
+export function fromAssets(assets: Assets): ValueD {
+  const value = new Map<string, Map<string, bigint>>();
+  if (assets.lovelace) value.set("", new Map([["", assets.lovelace]]));
+
+  const units = Object.keys(assets);
+  const policies = Array.from(
+    new Set(
+      units
+        .filter((unit) => unit !== "lovelace")
+        .map((unit) => unit.slice(0, 56))
+    )
+  );
+  policies.sort().forEach((policyId) => {
+    const policyUnits = units.filter((unit) => unit.slice(0, 56) === policyId);
+    const assetsMap = new Map<string, bigint>();
+    policyUnits.sort().forEach((unit) => {
+      assetsMap.set(unit.slice(56), assets[unit] ?? 0n);
+    });
+    value.set(policyId, assetsMap);
+  });
+  return value;
+}
+
+export function toAssets(value: ValueD): Assets {
+  const result: Assets = { lovelace: value.get("")?.get("") || BigInt(0) };
+
+  for (const [policyId, assets] of value) {
+    if (policyId === "") continue;
+    for (const [assetName, amount] of assets) {
+      result[policyId + assetName] = amount;
+    }
+  }
   return result;
 }

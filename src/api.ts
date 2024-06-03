@@ -1,14 +1,9 @@
 // TODO: Module documentation.
 import { Address, Assets, Blockfrost, Credential, Data, Lucid, OutRef, Tx, UTxO, Unit, UnixTime, fromUnit } from "@anastasia-labs/lucid-cardano-fork";
-import { PONftPolicyRedeemer, PartialOrderConfigDatum, PartialOrderDatum, RationalD } from "./contract.types";
-import { assetClassDFromUnit, expectedTokenName, fromAddress, mappendAssets, resolveOfferAC, resolvePOConstants } from "./utils";
+import { AssetClassD, PONftPolicyRedeemer, PartialOrderConfigDatum, PartialOrderContainedFee, PartialOrderDatum, PartialOrderFeeOutput, PartialOrderRedeemer, RationalD, OutputReferenceD } from "./contract.types";
+import { assetClassDFromUnit, assetClassDToUnit, expectedTokenName, fromAddress, fromAssets, isEqualContainedFee, mappendAssets, negateAssets, resolveOfferAC, resolvePOConstants, toAddress, zeroContainedFee } from "./utils";
+import { PartialOrderConstants } from "./constants";
 
-
-// TODO: To do error handling?
-
-
-
-// TODO: Add doc.
 
 export const fetchPartialOrderConfig = async (lucid: Lucid): Promise<[PartialOrderConfigDatum, UTxO]> => {
   const poConstants = resolvePOConstants(lucid)
@@ -94,4 +89,86 @@ export const createOrder = async (lucid: Lucid, tx: Tx, anUTxO: UTxO, owner: Add
       .readFrom([pocUTxO, poConstants.mintUTxO])
       .payToContract(outAddr, { [datumField]: Data.to(orderDatum, PartialOrderDatum) }, placeOrderAssets)
   return txAppended;
+}
+
+// There is likely a bug in Lucid's `datumOf` function, so we need to use this function instead.
+export async function myDatumOf(lucid: Lucid, utxo: UTxO): Promise<PartialOrderDatum> {
+  if (!utxo.datum) {
+    if (!utxo.datumHash) {
+      throw new Error("This UTxO does not have a datum hash.");
+    }
+    utxo.datum = await lucid.provider.getDatum(utxo.datumHash);
+  }
+  return Data.from(utxo.datum, PartialOrderDatum);
+}
+
+const fetchUTxOsDatums = async (lucid: Lucid, utxos: UTxO[]): Promise<[UTxO, PartialOrderDatum][]> => {
+  const utxosWithDatums = await Promise.all(utxos.map(async (utxo): Promise<[UTxO, PartialOrderDatum]> => {
+    const datum = await myDatumOf(lucid, utxo)
+    return [utxo, datum]
+  }
+  ));
+  return utxosWithDatums
+};
+
+const containedFeeToAssets = (orderDatum: PartialOrderDatum): Assets => {
+  return (containedFeeToAssetsM(orderDatum.podContainedFee, orderDatum.podOfferedAsset, orderDatum.podAskedAsset))
+};
+
+const containedFeeToAssetsM = (containedFee: PartialOrderContainedFee, offerAC: AssetClassD, priceAC: AssetClassD): Assets => {
+  const assets: Assets = {};
+  assets.lovelace = containedFee.pocfLovelaces;
+  assets[assetClassDToUnit(offerAC)] = containedFee.pocfOfferedTokens;
+  assets[assetClassDToUnit(priceAC)] = containedFee.pocfAskedTokens;
+  return assets;
+}
+
+const partialOrderPrice = (orderDatum: PartialOrderDatum, amount: bigint): Assets => {
+  return ({ [assetClassDToUnit(orderDatum.podAskedAsset)]: (amount * orderDatum.podPrice.numerator + orderDatum.podPrice.denominator - 1n) / orderDatum.podPrice.denominator })
+}
+
+const expectedPaymentWithDeposit = (poConstants: PartialOrderConstants, orderUTxOValue: Assets, orderDatum: PartialOrderDatum, isCompleteFill: boolean): Assets => {
+  const toSubtract = mappendAssets(mappendAssets({ [poConstants.mintPolicyId + orderDatum.podNFT]: 1n }, { [assetClassDToUnit(orderDatum.podOfferedAsset)]: orderDatum.podOfferedAmount }), containedFeeToAssets(orderDatum))
+  const toAdd = isCompleteFill ? partialOrderPrice(orderDatum, orderDatum.podOfferedAmount) : {}
+  const toSend = mappendAssets(mappendAssets(orderUTxOValue, toAdd), negateAssets(toSubtract))
+  const filteredToSend = Object.fromEntries(Object.entries(toSend).filter(([_, value]) => value !== 0n))
+  return (filteredToSend)
+}
+
+/**
+ * Cancels the specified orders.
+ *
+ * @param lucid - The instance of the Lucid class.
+ * @param tx - The transaction object.
+ * @param orderRefs - An array of order references to cancel.
+ * @returns A promise that resolves to the updated transaction object.
+ */
+export const cancelOrders = async (lucid: Lucid, tx: Tx, orderRefs: OutRef[]): Promise<Tx> => {
+  const orderUTxOs = await lucid.utxosByOutRef(orderRefs)
+  const orderUTxOsWithDatums = await fetchUTxOsDatums(lucid, orderUTxOs)
+  const poConstants = resolvePOConstants(lucid)
+  let txAppend = tx
+  let feeAcc = {}
+  let feeMapAcc = new Map()
+  for (const [orderUTxO, orderUTxOsDatum] of orderUTxOsWithDatums) {
+    const outputRef: OutputReferenceD = { txHash: { hash: orderUTxO.txHash }, outputIndex: BigInt(orderUTxO.outputIndex) }
+    const oldContainedFee = orderUTxOsDatum.podContainedFee
+    const makerPercentFeeToRefund = (orderUTxOsDatum.podOfferedAmount * oldContainedFee.pocfOfferedTokens) / orderUTxOsDatum.podOfferedOriginalAmount
+    const reqContainedFee: PartialOrderContainedFee = { pocfLovelaces: oldContainedFee.pocfLovelaces, pocfOfferedTokens: oldContainedFee.pocfOfferedTokens - makerPercentFeeToRefund, pocfAskedTokens: oldContainedFee.pocfAskedTokens }
+    const reqContainedFeeValue = containedFeeToAssetsM(reqContainedFee, orderUTxOsDatum.podOfferedAsset, orderUTxOsDatum.podAskedAsset)
+    const updateFeeCond = orderUTxOsDatum.podPartialFills === 0n || isEqualContainedFee(orderUTxOsDatum.podContainedFee, zeroContainedFee)
+    feeAcc = updateFeeCond ? feeAcc : mappendAssets(feeAcc, reqContainedFeeValue)
+    feeMapAcc = updateFeeCond ? feeMapAcc : feeMapAcc.set(outputRef, reqContainedFeeValue);
+    txAppend = txAppend
+      .collectFrom([orderUTxO], Data.to("PartialCancel", PartialOrderRedeemer))
+      .payToAddressWithData(toAddress(orderUTxOsDatum.podOwnerAddr, lucid), { inline: Data.to(outputRef, OutputReferenceD) }, expectedPaymentWithDeposit(poConstants, orderUTxO.assets, orderUTxOsDatum, false))
+      .addSignerKey(orderUTxOsDatum.podOwnerKey)
+      .mintAssets({ [poConstants.mintPolicyId + orderUTxOsDatum.podNFT]: -1n }, Data.to(null, PONftPolicyRedeemer));
+  }
+  const [pocDatum, pocUTxO] = await fetchPartialOrderConfig(lucid)
+  const feeOutput = Object.keys(feeAcc).length ? lucid.newTx().payToAddressWithData(toAddress(pocDatum.pocdFeeAddr, lucid), { hash: Data.to({ pofdMentionedFees: feeMapAcc, pofdReservedValue: fromAssets({}), pofdSpentUTxORef: null }, PartialOrderFeeOutput) }, feeAcc) : null
+  txAppend = txAppend
+    .readFrom([poConstants.mintUTxO, poConstants.valUTxO, pocUTxO])
+    .compose(feeOutput)
+  return txAppend;
 }

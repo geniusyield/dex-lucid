@@ -96,7 +96,7 @@ export type PartialOrderContainedFee = Data.Static<typeof PartialOrderContainedF
 export const PartialOrderContainedFee = PartialOrderContainedFeeSchema as unknown as PartialOrderContainedFee;
 
 export const PartialOrderFeeOutputSchema = Data.Object({
-  pofdMentionedFees: Data.Map(Data.Bytes(), ValueSchema),
+  pofdMentionedFees: Data.Map(OutputReferenceSchema, ValueSchema),
   pofdReservedValue: ValueSchema,
   pofdSpentUTxORef: Data.Nullable(OutputReferenceSchema)
 })
@@ -128,3 +128,6 @@ export const PartialOrderDatumSchema = Data.Object({
 export type PartialOrderDatum = Data.Static<typeof PartialOrderDatumSchema>;
 export const PartialOrderDatum = PartialOrderDatumSchema as unknown as PartialOrderDatum;
 
+export const PartialOrderRedeemerSchema = Data.Enum([Data.Literal("PartialCancel"), Data.Object({ PartialFill: Data.Tuple([Data.Integer()]) }), Data.Literal("CompleteFill")]);
+export type PartialOrderRedeemer = Data.Static<typeof PartialOrderRedeemerSchema>;
+export const PartialOrderRedeemer = PartialOrderRedeemerSchema as unknown as PartialOrderRedeemer;
