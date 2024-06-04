@@ -83,7 +83,7 @@ test('negateAssets', () => {
   });
 });
 
-test('cancelOrders', async () => {
+test('multiOrderCancellation', async () => {
   lucidPreprod.selectWalletFromSeed(walletPreprodSeedPhrase)
   const walletUTxOs1 = await lucidPreprod.utxosAt(await lucidPreprod.wallet.address())
   const walletAddress = await lucidPreprod.wallet.address()

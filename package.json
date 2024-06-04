@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "devDependencies": {
+    "@changesets/cli": "^2.27.5",
     "tsup": "^8.0.2",
     "typedoc": "^0.25.13",
     "typescript": "^5.4.5",
