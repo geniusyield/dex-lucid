@@ -89,14 +89,14 @@ test('cancelOrders', async () => {
   const walletAddress = await lucidPreprod.wallet.address()
   const { stakeCredential } = lucidPreprod.utils.getAddressDetails(walletAddress)
   // Create first order.
-  const createOrderTx1 = await createOrder(lucidPreprod, lucidPreprod.newTx(), walletUTxOs1[0] as UTxO, await lucidPreprod.wallet.address(), 10000000n, "", askedTokenUnit, { numerator: 10n, denominator: 5n }, false, stakeCredential, undefined, undefined)
+  const createOrderTx1 = await createOrder(lucidPreprod, lucidPreprod.newTx(), walletUTxOs1[0] as UTxO, await lucidPreprod.wallet.address(), 10000000n, "", askedTokenUnit, { numerator: 1n, denominator: 10n }, false, stakeCredential, undefined, undefined)
   const signedCreateOrderTx1 = await (await createOrderTx1.complete()).sign().complete()
   const create1TxHash = await signedCreateOrderTx1.submit()
   console.log("create1TxHash:", create1TxHash)
   await lucidPreprod.awaitTx(create1TxHash)
   const walletUTxOs2 = await lucidPreprod.utxosAt(await lucidPreprod.wallet.address())
   // Create second order.
-  const createOrderTx2 = await createOrder(lucidPreprod, lucidPreprod.newTx(), walletUTxOs2[0] as UTxO, await lucidPreprod.wallet.address(), 10000000n, "", askedTokenUnit, { numerator: 10n, denominator: 5n }, false, stakeCredential, undefined, undefined)
+  const createOrderTx2 = await createOrder(lucidPreprod, lucidPreprod.newTx(), walletUTxOs2[0] as UTxO, await lucidPreprod.wallet.address(), 10000000n, "", askedTokenUnit, { numerator: 1n, denominator: 10n }, false, stakeCredential, undefined, undefined)
   const signedCreateOrderTx2 = await (await createOrderTx2.complete()).sign().complete()
   const create2TxHash = await signedCreateOrderTx2.submit()
   console.log("create2TxHash:", create2TxHash)

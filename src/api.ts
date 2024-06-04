@@ -1,8 +1,9 @@
 // TODO: Module documentation.
 import { Address, Assets, Blockfrost, Credential, Data, Lucid, OutRef, Tx, UTxO, Unit, UnixTime, fromUnit } from "@anastasia-labs/lucid-cardano-fork";
 import { AssetClassD, PONftPolicyRedeemer, PartialOrderConfigDatum, PartialOrderContainedFee, PartialOrderDatum, PartialOrderFeeOutput, PartialOrderRedeemer, RationalD, OutputReferenceD, ValueD } from "./contract.types";
-import { addContainedFees, assetClassDFromUnit, assetClassDToUnit, expectedTokenName, fromAddress, fromAssets, isEqualContainedFee, mappendAssets, maxBigint, negateAssets, resolveAC, resolvePOConstants, toAddress, zeroContainedFee } from "./utils";
+import { addContainedFees, assetClassDFromUnit, assetClassDToUnit, expectedTokenName, fromAddress, fromAssets, isEqualContainedFee, mappendAssets, maxBigint, negateAssets, resolveAC, resolvePOConstants, toAddress, zeroContainedFee, ensure } from "./utils";
 import { PartialOrderConstants } from "./constants";
+import { assert } from "vitest";
 
 
 export const fetchPartialOrderConfig = async (lucid: Lucid): Promise<[PartialOrderConfigDatum, UTxO]> => {
@@ -186,7 +187,7 @@ export const fillOrders = async (lucid: Lucid, tx: Tx, orderRefsWithAmt: [OutRef
   let txAppend = tx
   let feeAcc = {}
   let feeMapAcc: Map<OutputReferenceD, ValueD> = new Map()
-  let takerPercentageFees = {}
+  let takerPercentageFees: Assets = {}
   let maxTakerFee = 0n
   const currentTime = Date.now()
   const toInlineDatum = (utxo: UTxO) => utxo.datum ? "inline" : "asHash"
@@ -245,23 +246,24 @@ export const fillOrders = async (lucid: Lucid, tx: Tx, orderRefsWithAmt: [OutRef
     txAppend = Object.keys(feeAcc).length ? txAppend.payToAddressWithData(toAddress(pocDatum.pocdFeeAddr, lucid), { asHash: Data.to({ pofdMentionedFees: feeMapAcc, pofdReservedValue: fromAssets({}), pofdSpentUTxORef: null }, PartialOrderFeeOutput) }, feeAcc) : txAppend
   }
 
-  const buildWithoutFeeOutput = () => {
-    let i = 1;
-    for (const [orderUTxO, orderUTxOsDatum, fillAmount] of orderInfos) {
-      const price = partialOrderPrice(orderUTxOsDatum, fillAmount)
-      const tf: PartialOrderContainedFee = i === 1 ? { pocfLovelaces: maxTakerFee, pocfAskedTokens: 0n, pocfOfferedTokens: 0n } : { pocfLovelaces: 0n, pocfAskedTokens: 0n, pocfOfferedTokens: 0n }
-      const od = { ...orderUTxOsDatum, podOfferedAmount: orderUTxOsDatum.podOfferedAmount - fillAmount, podPartialFills: orderUTxOsDatum.podPartialFills + 1n, podContainedFee: addContainedFees(orderUTxOsDatum.podContainedFee, tf), podContainedPayment: orderUTxOsDatum.podContainedPayment + (price[assetClassDToUnit(orderUTxOsDatum.podAskedAsset)] ?? 0n) }
-      const expectedValueOut = mappendAssets(mappendAssets(mappendAssets(orderUTxO.assets, price), containedFeeToAssetsM(tf, orderUTxOsDatum.podOfferedAsset, orderUTxOsDatum.podAskedAsset)), negateAssets({ [assetClassDToUnit(orderUTxOsDatum.podOfferedAsset)]: fillAmount }))
-      txAppend = txAppend
-        .collectFrom([orderUTxO], Data.to({ PartialFill: [fillAmount] }, PartialOrderRedeemer))
-        .payToContract(orderUTxO.address, { [toInlineDatum(orderUTxO)]: Data.to(od, PartialOrderDatum) }, expectedValueOut)
-      i++
-    }
+  const buildWithoutFeeOutput = ([orderUTxO, orderUTxOsDatum, fillAmount]: [UTxO, PartialOrderDatum, bigint]) => {
+    const price = partialOrderPrice(orderUTxOsDatum, fillAmount)
+    const tf: PartialOrderContainedFee = { pocfLovelaces: maxTakerFee, pocfAskedTokens: takerPercentageFees[assetClassDToUnit(orderUTxOsDatum.podAskedAsset)] ?? 0n, pocfOfferedTokens: 0n }
+    const od = { ...orderUTxOsDatum, podOfferedAmount: orderUTxOsDatum.podOfferedAmount - fillAmount, podPartialFills: orderUTxOsDatum.podPartialFills + 1n, podContainedFee: addContainedFees(orderUTxOsDatum.podContainedFee, tf), podContainedPayment: orderUTxOsDatum.podContainedPayment + (price[assetClassDToUnit(orderUTxOsDatum.podAskedAsset)] ?? 0n) }
+    const expectedValueOut = mappendAssets(mappendAssets(mappendAssets(orderUTxO.assets, price), containedFeeToAssetsM(tf, orderUTxOsDatum.podOfferedAsset, orderUTxOsDatum.podAskedAsset)), negateAssets({ [assetClassDToUnit(orderUTxOsDatum.podOfferedAsset)]: fillAmount }))
+    txAppend = txAppend
+      .collectFrom([orderUTxO], Data.to({ PartialFill: [fillAmount] }, PartialOrderRedeemer))
+      .payToContract(orderUTxO.address, { [toInlineDatum(orderUTxO)]: Data.to(od, PartialOrderDatum) }, expectedValueOut)
   }
   if (orderInfos.some(([_, orderUTxOsDatum, fillAmount]) => fillAmount === orderUTxOsDatum.podOfferedAmount)) {
     buildWithFeeOutput();
   } else {
-    buildWithoutFeeOutput();
+    if (orderInfos.length !== 1) {
+      buildWithFeeOutput()
+    } else {
+      assert(orderInfos[0])
+      buildWithoutFeeOutput(orderInfos[0]);
+    }
   }
   txAppend = txAppend.readFrom([poConstants.mintUTxO, poConstants.valUTxO, pocUTxO])
   return txAppend
