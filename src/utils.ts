@@ -145,7 +145,7 @@ export function resolvePOConstants(lucid: Lucid): PartialOrderConstants {
  * @param amt The amount of the asset.
  * @returns An object representing the resolved asset class.
  */
-export function resolveOfferAC(unit: Unit, amt: bigint): Assets {
+export function resolveAC(unit: Unit, amt: bigint): Assets {
   if (unit === '') {
     return { lovelace: amt }
   } else {
@@ -173,7 +173,12 @@ export function mappendAssets(a1: Assets, a2: Assets) {
       result[key] = quantity;
     }
   });
-
+  // filter out zero entries
+  Object.entries(result).forEach(([key, value]) => {
+    if (value === 0n) {
+      delete result[key];
+    }
+  });
   return result;
 }
 
@@ -200,6 +205,20 @@ export function isEqualContainedFee(fee1: PartialOrderContainedFee, fee2: Partia
   return (fee1.pocfLovelaces === fee2.pocfLovelaces &&
     fee1.pocfOfferedTokens === fee2.pocfOfferedTokens &&
     fee1.pocfAskedTokens === fee2.pocfAskedTokens);
+}
+
+/**
+ * Adds two `PartialOrderContainedFee` objects together and returns the result.
+ * @param fee1 - The first `PartialOrderContainedFee` object.
+ * @param fee2 - The second `PartialOrderContainedFee` object.
+ * @returns A new `PartialOrderContainedFee` object representing the addition of `fee1` and `fee2`.
+ */
+export function addContainedFees(fee1: PartialOrderContainedFee, fee2: PartialOrderContainedFee): PartialOrderContainedFee {
+  return {
+    pocfLovelaces: fee1.pocfLovelaces + fee2.pocfLovelaces,
+    pocfOfferedTokens: fee1.pocfOfferedTokens + fee2.pocfOfferedTokens,
+    pocfAskedTokens: fee1.pocfAskedTokens + fee2.pocfAskedTokens,
+  };
 }
 
 export function fromAssets(assets: Assets): ValueD {
@@ -235,4 +254,8 @@ export function toAssets(value: ValueD): Assets {
     }
   }
   return result;
+}
+
+export function maxBigint(a: bigint, b: bigint): bigint {
+  return a > b ? a : b;
 }

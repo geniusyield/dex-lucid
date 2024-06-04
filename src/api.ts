@@ -1,7 +1,7 @@
 // TODO: Module documentation.
 import { Address, Assets, Blockfrost, Credential, Data, Lucid, OutRef, Tx, UTxO, Unit, UnixTime, fromUnit } from "@anastasia-labs/lucid-cardano-fork";
-import { AssetClassD, PONftPolicyRedeemer, PartialOrderConfigDatum, PartialOrderContainedFee, PartialOrderDatum, PartialOrderFeeOutput, PartialOrderRedeemer, RationalD, OutputReferenceD } from "./contract.types";
-import { assetClassDFromUnit, assetClassDToUnit, expectedTokenName, fromAddress, fromAssets, isEqualContainedFee, mappendAssets, negateAssets, resolveOfferAC, resolvePOConstants, toAddress, zeroContainedFee } from "./utils";
+import { AssetClassD, PONftPolicyRedeemer, PartialOrderConfigDatum, PartialOrderContainedFee, PartialOrderDatum, PartialOrderFeeOutput, PartialOrderRedeemer, RationalD, OutputReferenceD, ValueD } from "./contract.types";
+import { addContainedFees, assetClassDFromUnit, assetClassDToUnit, expectedTokenName, fromAddress, fromAssets, isEqualContainedFee, mappendAssets, maxBigint, negateAssets, resolveAC, resolvePOConstants, toAddress, zeroContainedFee } from "./utils";
 import { PartialOrderConstants } from "./constants";
 
 
@@ -80,7 +80,7 @@ export const createOrder = async (lucid: Lucid, tx: Tx, anUTxO: UTxO, owner: Add
     },
     podContainedPayment: 0n
   }
-  const placeOrderAssets: Assets = mappendAssets(mappendAssets({ [nftUnit]: 1n }, resolveOfferAC(offerAC, offerAmt + makerPercentageFees)), { lovelace: (pocDatum.pocdMinDeposit + pocDatum.pocdMakerFeeFlat) })
+  const placeOrderAssets: Assets = mappendAssets(mappendAssets({ [nftUnit]: 1n }, resolveAC(offerAC, offerAmt + makerPercentageFees)), { lovelace: (pocDatum.pocdMinDeposit + pocDatum.pocdMakerFeeFlat) })
   const datumField = inlineDat ? "inline" : "asHash"
   const txAppended =
     tx
@@ -93,13 +93,14 @@ export const createOrder = async (lucid: Lucid, tx: Tx, anUTxO: UTxO, owner: Add
 
 // There is likely a bug in Lucid's `datumOf` function, so we need to use this function instead.
 export async function myDatumOf(lucid: Lucid, utxo: UTxO): Promise<PartialOrderDatum> {
-  if (!utxo.datum) {
+  let datToResolve = utxo.datum
+  if (!datToResolve) {
     if (!utxo.datumHash) {
       throw new Error("This UTxO does not have a datum hash.");
     }
-    utxo.datum = await lucid.provider.getDatum(utxo.datumHash);
+    datToResolve = await lucid.provider.getDatum(utxo.datumHash);
   }
-  return Data.from(utxo.datum, PartialOrderDatum);
+  return Data.from(datToResolve, PartialOrderDatum);
 }
 
 const fetchUTxOsDatums = async (lucid: Lucid, utxos: UTxO[]): Promise<[UTxO, PartialOrderDatum][]> => {
@@ -116,10 +117,7 @@ const containedFeeToAssets = (orderDatum: PartialOrderDatum): Assets => {
 };
 
 const containedFeeToAssetsM = (containedFee: PartialOrderContainedFee, offerAC: AssetClassD, priceAC: AssetClassD): Assets => {
-  const assets: Assets = {};
-  assets.lovelace = containedFee.pocfLovelaces;
-  assets[assetClassDToUnit(offerAC)] = containedFee.pocfOfferedTokens;
-  assets[assetClassDToUnit(priceAC)] = containedFee.pocfAskedTokens;
+  const assets: Assets = mappendAssets(mappendAssets({ lovelace: containedFee.pocfLovelaces }, { [assetClassDToUnit(offerAC)]: containedFee.pocfOfferedTokens }), { [assetClassDToUnit(priceAC)]: containedFee.pocfAskedTokens })
   return assets;
 }
 
@@ -131,8 +129,7 @@ const expectedPaymentWithDeposit = (poConstants: PartialOrderConstants, orderUTx
   const toSubtract = mappendAssets(mappendAssets({ [poConstants.mintPolicyId + orderDatum.podNFT]: 1n }, { [assetClassDToUnit(orderDatum.podOfferedAsset)]: orderDatum.podOfferedAmount }), containedFeeToAssets(orderDatum))
   const toAdd = isCompleteFill ? partialOrderPrice(orderDatum, orderDatum.podOfferedAmount) : {}
   const toSend = mappendAssets(mappendAssets(orderUTxOValue, toAdd), negateAssets(toSubtract))
-  const filteredToSend = Object.fromEntries(Object.entries(toSend).filter(([_, value]) => value !== 0n))
-  return (filteredToSend)
+  return (toSend)
 }
 
 /**
@@ -149,7 +146,7 @@ export const cancelOrders = async (lucid: Lucid, tx: Tx, orderRefs: OutRef[]): P
   const poConstants = resolvePOConstants(lucid)
   let txAppend = tx
   let feeAcc = {}
-  let feeMapAcc = new Map()
+  let feeMapAcc: Map<OutputReferenceD, ValueD> = new Map()
   for (const [orderUTxO, orderUTxOsDatum] of orderUTxOsWithDatums) {
     const outputRef: OutputReferenceD = { txHash: { hash: orderUTxO.txHash }, outputIndex: BigInt(orderUTxO.outputIndex) }
     const oldContainedFee = orderUTxOsDatum.podContainedFee
@@ -158,7 +155,7 @@ export const cancelOrders = async (lucid: Lucid, tx: Tx, orderRefs: OutRef[]): P
     const reqContainedFeeValue = containedFeeToAssetsM(reqContainedFee, orderUTxOsDatum.podOfferedAsset, orderUTxOsDatum.podAskedAsset)
     const updateFeeCond = orderUTxOsDatum.podPartialFills === 0n || isEqualContainedFee(orderUTxOsDatum.podContainedFee, zeroContainedFee)
     feeAcc = updateFeeCond ? feeAcc : mappendAssets(feeAcc, reqContainedFeeValue)
-    feeMapAcc = updateFeeCond ? feeMapAcc : feeMapAcc.set(outputRef, reqContainedFeeValue);
+    feeMapAcc = updateFeeCond ? feeMapAcc : feeMapAcc.set(outputRef, fromAssets(reqContainedFeeValue));
     txAppend = txAppend
       .collectFrom([orderUTxO], Data.to("PartialCancel", PartialOrderRedeemer))
       .payToAddressWithData(toAddress(orderUTxOsDatum.podOwnerAddr, lucid), { inline: Data.to(outputRef, OutputReferenceD) }, expectedPaymentWithDeposit(poConstants, orderUTxO.assets, orderUTxOsDatum, false))
@@ -166,9 +163,106 @@ export const cancelOrders = async (lucid: Lucid, tx: Tx, orderRefs: OutRef[]): P
       .mintAssets({ [poConstants.mintPolicyId + orderUTxOsDatum.podNFT]: -1n }, Data.to(null, PONftPolicyRedeemer));
   }
   const [pocDatum, pocUTxO] = await fetchPartialOrderConfig(lucid)
-  const feeOutput = Object.keys(feeAcc).length ? lucid.newTx().payToAddressWithData(toAddress(pocDatum.pocdFeeAddr, lucid), { hash: Data.to({ pofdMentionedFees: feeMapAcc, pofdReservedValue: fromAssets({}), pofdSpentUTxORef: null }, PartialOrderFeeOutput) }, feeAcc) : null
+  txAppend = Object.keys(feeAcc).length ? txAppend.payToAddressWithData(toAddress(pocDatum.pocdFeeAddr, lucid), { asHash: Data.to({ pofdMentionedFees: feeMapAcc, pofdReservedValue: fromAssets({}), pofdSpentUTxORef: null }, PartialOrderFeeOutput) }, feeAcc) : txAppend
   txAppend = txAppend
     .readFrom([poConstants.mintUTxO, poConstants.valUTxO, pocUTxO])
-    .compose(feeOutput)
   return txAppend;
+}
+
+/**
+ * Fills the orders with the specified amounts and returns a new transaction.
+ *
+ * @param lucid - The Lucid instance.
+ * @param tx - The earlier transaction.
+ * @param orderRefsWithAmt - An array of order references with their corresponding fill amounts.
+ * @returns A promise that resolves to the new transaction with the filled orders.
+ * @throws If the order cannot be filled before the start time, after the end time, if the fill amount is zero, or if the fill amount is greater than the offered amount.
+ */
+export const fillOrders = async (lucid: Lucid, tx: Tx, orderRefsWithAmt: [OutRef, bigint][]): Promise<Tx> => {
+  const orderUTxOs = await lucid.utxosByOutRef(orderRefsWithAmt.map(([ref, _]) => ref))
+  const orderUTxOsWithDatums = await fetchUTxOsDatums(lucid, orderUTxOs)
+  const poConstants = resolvePOConstants(lucid)
+  const [pocDatum, pocUTxO] = await fetchPartialOrderConfig(lucid)
+  let txAppend = tx
+  let feeAcc = {}
+  let feeMapAcc: Map<OutputReferenceD, ValueD> = new Map()
+  let takerPercentageFees = {}
+  let maxTakerFee = 0n
+  const currentTime = Date.now()
+  const toInlineDatum = (utxo: UTxO) => utxo.datum ? "inline" : "asHash"
+  // More optimal implementation could be written but with limit of < 100 orders, this is fine.
+  const orderInfos: [UTxO, PartialOrderDatum, bigint][] = orderUTxOsWithDatums.map(([orderUTxO, orderUTxOsDatum]) => {
+    const fillAmount = orderRefsWithAmt.find(([ref, _]) => ref.txHash === orderUTxO.txHash && ref.outputIndex === orderUTxO.outputIndex)?.[1] || 0n;
+    const price = partialOrderPrice(orderUTxOsDatum, fillAmount)
+    const takerUnit = assetClassDToUnit(orderUTxOsDatum.podAskedAsset)
+    const takerPayment = price[takerUnit] ?? 0n
+    takerPercentageFees = mappendAssets(takerPercentageFees, { [takerUnit]: (takerPayment * pocDatum.pocdMakerFeeRatio.numerator) / pocDatum.pocdMakerFeeRatio.denominator })
+    maxTakerFee = maxBigint(maxTakerFee, orderUTxOsDatum.podTakerLovelaceFlatFee)
+    if (orderUTxOsDatum.podStart) {
+      if (orderUTxOsDatum.podStart > currentTime) {
+        throw new Error("Order cannot be filled before the start time");
+      }
+      // TODO: Is Lucid smart enough to handle multiple `validFrom`'s?
+      txAppend = txAppend.validFrom(Number(orderUTxOsDatum.podStart))
+    }
+    if (orderUTxOsDatum.podEnd) {
+      if (orderUTxOsDatum.podEnd < currentTime) {
+        throw new Error("Order cannot be filled after the end time");
+      }
+      // TODO: See comment above for `validFrom`.
+      txAppend = txAppend.validTo(Number(orderUTxOsDatum.podEnd))
+    }
+    if (fillAmount === 0n) {
+      throw new Error("Fill amount cannot be zero");
+    }
+    if (fillAmount > orderUTxOsDatum.podOfferedAmount) {
+      throw new Error("Fill amount cannot be greater than offered amount");
+    }
+    return [orderUTxO, orderUTxOsDatum, fillAmount];
+  });
+  const buildWithFeeOutput = () => {
+    for (const [orderUTxO, orderUTxOsDatum, fillAmount] of orderInfos) {
+      const price = partialOrderPrice(orderUTxOsDatum, fillAmount)
+      const outputRef: OutputReferenceD = { txHash: { hash: orderUTxO.txHash }, outputIndex: BigInt(orderUTxO.outputIndex) }
+      if (fillAmount === orderUTxOsDatum.podOfferedAmount) {
+        const orderContainedFee = containedFeeToAssets(orderUTxOsDatum)
+        feeMapAcc = feeMapAcc.set(outputRef, fromAssets(orderContainedFee));
+        feeAcc = mappendAssets(feeAcc, orderContainedFee)
+        const expectedAssetsOut = expectedPaymentWithDeposit(poConstants, orderUTxO.assets, orderUTxOsDatum, true)
+        txAppend = txAppend
+          .collectFrom([orderUTxO], Data.to("CompleteFill", PartialOrderRedeemer))
+          .payToAddressWithData(toAddress(orderUTxOsDatum.podOwnerAddr, lucid), { inline: Data.to(outputRef, OutputReferenceD) }, expectedAssetsOut)
+          .mintAssets({ [poConstants.mintPolicyId + orderUTxOsDatum.podNFT]: -1n }, Data.to(null, PONftPolicyRedeemer))
+      } else {
+        const od = { ...orderUTxOsDatum, podOfferedAmount: orderUTxOsDatum.podOfferedAmount - fillAmount, podPartialFills: orderUTxOsDatum.podPartialFills + 1n, podContainedPayment: orderUTxOsDatum.podContainedPayment + (price[assetClassDToUnit(orderUTxOsDatum.podAskedAsset)] ?? 0n) }
+        const expectedValueOut = mappendAssets(mappendAssets(orderUTxO.assets, price), negateAssets({ [assetClassDToUnit(orderUTxOsDatum.podOfferedAsset)]: fillAmount }))
+        txAppend = txAppend
+          .collectFrom([orderUTxO], Data.to({ PartialFill: [fillAmount] }, PartialOrderRedeemer))
+          .payToContract(orderUTxO.address, { [toInlineDatum(orderUTxO)]: Data.to(od, PartialOrderDatum) }, expectedValueOut)
+      }
+    }
+    feeAcc = mappendAssets(mappendAssets(feeAcc, { lovelace: maxTakerFee }), takerPercentageFees)
+    txAppend = Object.keys(feeAcc).length ? txAppend.payToAddressWithData(toAddress(pocDatum.pocdFeeAddr, lucid), { asHash: Data.to({ pofdMentionedFees: feeMapAcc, pofdReservedValue: fromAssets({}), pofdSpentUTxORef: null }, PartialOrderFeeOutput) }, feeAcc) : txAppend
+  }
+
+  const buildWithoutFeeOutput = () => {
+    let i = 1;
+    for (const [orderUTxO, orderUTxOsDatum, fillAmount] of orderInfos) {
+      const price = partialOrderPrice(orderUTxOsDatum, fillAmount)
+      const tf: PartialOrderContainedFee = i === 1 ? { pocfLovelaces: maxTakerFee, pocfAskedTokens: 0n, pocfOfferedTokens: 0n } : { pocfLovelaces: 0n, pocfAskedTokens: 0n, pocfOfferedTokens: 0n }
+      const od = { ...orderUTxOsDatum, podOfferedAmount: orderUTxOsDatum.podOfferedAmount - fillAmount, podPartialFills: orderUTxOsDatum.podPartialFills + 1n, podContainedFee: addContainedFees(orderUTxOsDatum.podContainedFee, tf), podContainedPayment: orderUTxOsDatum.podContainedPayment + (price[assetClassDToUnit(orderUTxOsDatum.podAskedAsset)] ?? 0n) }
+      const expectedValueOut = mappendAssets(mappendAssets(mappendAssets(orderUTxO.assets, price), containedFeeToAssetsM(tf, orderUTxOsDatum.podOfferedAsset, orderUTxOsDatum.podAskedAsset)), negateAssets({ [assetClassDToUnit(orderUTxOsDatum.podOfferedAsset)]: fillAmount }))
+      txAppend = txAppend
+        .collectFrom([orderUTxO], Data.to({ PartialFill: [fillAmount] }, PartialOrderRedeemer))
+        .payToContract(orderUTxO.address, { [toInlineDatum(orderUTxO)]: Data.to(od, PartialOrderDatum) }, expectedValueOut)
+      i++
+    }
+  }
+  if (orderInfos.some(([_, orderUTxOsDatum, fillAmount]) => fillAmount === orderUTxOsDatum.podOfferedAmount)) {
+    buildWithFeeOutput();
+  } else {
+    buildWithoutFeeOutput();
+  }
+  txAppend = txAppend.readFrom([poConstants.mintUTxO, poConstants.valUTxO, pocUTxO])
+  return txAppend
 }

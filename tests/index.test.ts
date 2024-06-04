@@ -1,5 +1,5 @@
 import { Constr, Data, Lucid, Maestro, UTxO } from "@anastasia-labs/lucid-cardano-fork";
-import { fetchPartialOrderConfig, decimalToHexByte, expectedTokenName, createOrder, PartialOrderRedeemer, negateAssets, cancelOrders } from '../src/index'
+import { fetchPartialOrderConfig, decimalToHexByte, expectedTokenName, createOrder, PartialOrderRedeemer, negateAssets, cancelOrders, fillOrders } from '../src/index'
 import { test, expect } from 'vitest'
 
 (BigInt.prototype as any).toJSON = function () {
@@ -9,6 +9,7 @@ import { test, expect } from 'vitest'
 const maestroMainnetKey = import.meta.env.VITE_MAESTRO_MAINNET_KEY as string;
 const maestroPreprodKey = import.meta.env.VITE_MAESTRO_PREPROD_KEY as string;
 const walletPreprodSeedPhrase = import.meta.env.VITE_PREPROD_SEED_PHRASE as string;
+const askedTokenUnit = import.meta.env.VITE_ASKED_TOKEN_UNIT as string;
 
 const lucidMainnet = await Lucid.new(
   new Maestro({ network: "Mainnet", apiKey: maestroMainnetKey, turboSubmit: false }),
@@ -84,15 +85,28 @@ test('negateAssets', () => {
 
 test('cancelOrders', async () => {
   lucidPreprod.selectWalletFromSeed(walletPreprodSeedPhrase)
-  const walletUTxOs = await lucidPreprod.utxosAt(await lucidPreprod.wallet.address())
+  const walletUTxOs1 = await lucidPreprod.utxosAt(await lucidPreprod.wallet.address())
   const walletAddress = await lucidPreprod.wallet.address()
   const { stakeCredential } = lucidPreprod.utils.getAddressDetails(walletAddress)
-  const tx = await createOrder(lucidPreprod, lucidPreprod.newTx(), walletUTxOs[0] as UTxO, await lucidPreprod.wallet.address(), 1000000n, "", "a2376874f7e559fbf4e41830c83058d46d8eeb8cb8cf0d94ab15a16e47454e53", { numerator: 10n, denominator: 5n }, false, stakeCredential, undefined, undefined)
-  const signedTx = await (await tx.complete()).sign().complete()
-  const createTxHash = await signedTx.submit()
-  console.log("createTxHash:", createTxHash)
-  await lucidPreprod.awaitTx(createTxHash)
-  const cancelTx = await cancelOrders(lucidPreprod, lucidPreprod.newTx(), [{ txHash: createTxHash, outputIndex: 0 }])
+  // Create first order.
+  const createOrderTx1 = await createOrder(lucidPreprod, lucidPreprod.newTx(), walletUTxOs1[0] as UTxO, await lucidPreprod.wallet.address(), 10000000n, "", askedTokenUnit, { numerator: 10n, denominator: 5n }, false, stakeCredential, undefined, undefined)
+  const signedCreateOrderTx1 = await (await createOrderTx1.complete()).sign().complete()
+  const create1TxHash = await signedCreateOrderTx1.submit()
+  console.log("create1TxHash:", create1TxHash)
+  await lucidPreprod.awaitTx(create1TxHash)
+  const walletUTxOs2 = await lucidPreprod.utxosAt(await lucidPreprod.wallet.address())
+  // Create second order.
+  const createOrderTx2 = await createOrder(lucidPreprod, lucidPreprod.newTx(), walletUTxOs2[0] as UTxO, await lucidPreprod.wallet.address(), 10000000n, "", askedTokenUnit, { numerator: 10n, denominator: 5n }, false, stakeCredential, undefined, undefined)
+  const signedCreateOrderTx2 = await (await createOrderTx2.complete()).sign().complete()
+  const create2TxHash = await signedCreateOrderTx2.submit()
+  console.log("create2TxHash:", create2TxHash)
+  await lucidPreprod.awaitTx(create2TxHash)
+  const fillTx = await fillOrders(lucidPreprod, lucidPreprod.newTx(), [[{ txHash: create1TxHash, outputIndex: 0 }, 5000000n], [{ txHash: create2TxHash, outputIndex: 0 }, 6000000n]])
+  const signedFillTx = await (await fillTx.complete()).sign().complete()
+  const fillTxHash = await signedFillTx.submit()
+  console.log("fillTxHash:", fillTxHash)
+  await lucidPreprod.awaitTx(fillTxHash)
+  const cancelTx = await cancelOrders(lucidPreprod, lucidPreprod.newTx(), [{ txHash: fillTxHash, outputIndex: 0 }, { txHash: fillTxHash, outputIndex: 0 }])
   const signedCancelTx = await (await cancelTx.complete()).sign().complete()
   const cancelTxHash = await signedCancelTx.submit()
   console.log("cancelTxHash:", cancelTxHash)
