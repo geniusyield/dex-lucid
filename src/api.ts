@@ -1,10 +1,8 @@
 // TODO: Module documentation.
 import { Address, Assets, Blockfrost, Credential, Data, Lucid, OutRef, Tx, UTxO, Unit, UnixTime, fromUnit } from "@anastasia-labs/lucid-cardano-fork";
 import { AssetClassD, PONftPolicyRedeemer, PartialOrderConfigDatum, PartialOrderContainedFee, PartialOrderDatum, PartialOrderFeeOutput, PartialOrderRedeemer, RationalD, OutputReferenceD, ValueD } from "./contract.types";
-import { addContainedFees, assetClassDFromUnit, assetClassDToUnit, expectedTokenName, fromAddress, fromAssets, isEqualContainedFee, mappendAssets, maxBigint, negateAssets, resolveAC, resolvePOConstants, toAddress, zeroContainedFee } from "./utils";
+import { addContainedFees, assetClassDFromUnit, assetClassDToUnit, ensure, expectedTokenName, fromAddress, fromAssets, isEqualContainedFee, mappendAssets, maxBigint, negateAssets, resolveAC, resolvePOConstants, toAddress, zeroContainedFee } from "./utils";
 import { PartialOrderConstants } from "./constants";
-import { assert } from "vitest";
-
 
 export const fetchPartialOrderConfig = async (lucid: Lucid): Promise<[PartialOrderConfigDatum, UTxO]> => {
   const poConstants = resolvePOConstants(lucid)
@@ -261,8 +259,7 @@ export const fillOrders = async (lucid: Lucid, tx: Tx, orderRefsWithAmt: [OutRef
     if (orderInfos.length !== 1) {
       buildWithFeeOutput()
     } else {
-      assert(orderInfos[0])
-      buildWithoutFeeOutput(orderInfos[0]);
+      buildWithoutFeeOutput(ensure(orderInfos[0]));
     }
   }
   txAppend = txAppend.readFrom([poConstants.mintUTxO, poConstants.valUTxO, pocUTxO])

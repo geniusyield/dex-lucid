@@ -1,5 +1,11 @@
 # @geniusyield/sdk
 
+## 0.0.4
+
+### Patch Changes
+
+- avoid use of an import from `vitest` in api src file
+
 ## 0.0.3
 
 ### Patch Changes
