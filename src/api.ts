@@ -3,6 +3,7 @@ import { Address, Assets, Blockfrost, Credential, Data, Lucid, OutRef, Tx, UTxO,
 import { AssetClassD, PONftPolicyRedeemer, PartialOrderConfigDatum, PartialOrderContainedFee, PartialOrderDatum, PartialOrderFeeOutput, PartialOrderRedeemer, RationalD, OutputReferenceD, ValueD } from "./contract.types";
 import { addContainedFees, assetClassDFromUnit, assetClassDToUnit, ensure, expectedTokenName, fromAddress, fromAssets, isEqualContainedFee, mappendAssets, maxBigint, negateAssets, resolveAC, resolvePOConstants, toAddress, zeroContainedFee } from "./utils";
 import { PartialOrderConstants } from "./constants";
+import { Fees } from "./types"
 
 export const fetchPartialOrderConfig = async (lucid: Lucid): Promise<[PartialOrderConfigDatum, UTxO]> => {
   const poConstants = resolvePOConstants(lucid)
@@ -30,7 +31,7 @@ export const fetchPartialOrderConfig = async (lucid: Lucid): Promise<[PartialOrd
  * @throws Throws an error if the offer amount is not positive, if the price numerator or denominator is not positive,
  * if the offered and asked assets are the same, or if the end time is earlier than the start time.
  */
-export const createOrder = async (lucid: Lucid, tx: Tx, anUTxO: UTxO, owner: Address, offerAmt: bigint, offerAC: Unit, priceAC: Unit, price: RationalD, inlineDat: boolean, aStakeCred?: Credential, start?: UnixTime, end?: UnixTime): Promise<Tx> => {
+export const createOrder = async (lucid: Lucid, tx: Tx, anUTxO: UTxO, owner: Address, offerAmt: bigint, offerAC: Unit, priceAC: Unit, price: RationalD, inlineDat: boolean, aStakeCred?: Credential, start?: UnixTime, end?: UnixTime): Promise<[Fees, Tx]> => {
   if (offerAmt <= 0n) {
     throw new Error("Offer amount must be positive.")
   }
@@ -87,7 +88,8 @@ export const createOrder = async (lucid: Lucid, tx: Tx, anUTxO: UTxO, owner: Add
       .mintAssets({ [nftUnit]: 1n }, Data.to({ txHash: { hash: anOutRef.txHash }, outputIndex: BigInt(anOutRef.outputIndex) }, PONftPolicyRedeemer))
       .readFrom([pocUTxO, poConstants.mintUTxO])
       .payToContract(outAddr, { [datumField]: Data.to(orderDatum, PartialOrderDatum) }, placeOrderAssets)
-  return txAppended;
+  const orderCreationFees: Fees = { percentTokenFees: resolveAC(offerAC, makerPercentageFees), flatLovelaceFees: pocDatum.pocdMakerFeeFlat }
+  return [orderCreationFees, txAppended];
 }
 
 // There is likely a bug in Lucid's `datumOf` function, so we need to use this function instead.
@@ -177,7 +179,7 @@ export const cancelOrders = async (lucid: Lucid, tx: Tx, orderRefs: OutRef[]): P
  * @returns A promise that resolves to the new transaction with the filled orders.
  * @throws If the order cannot be filled before the start time, after the end time, if the fill amount is zero, or if the fill amount is greater than the offered amount.
  */
-export const fillOrders = async (lucid: Lucid, tx: Tx, orderRefsWithAmt: [OutRef, bigint][]): Promise<Tx> => {
+export const fillOrders = async (lucid: Lucid, tx: Tx, orderRefsWithAmt: [OutRef, bigint][]): Promise<[Fees, Tx]> => {
   const orderUTxOs = await lucid.utxosByOutRef(orderRefsWithAmt.map(([ref, _]) => ref))
   const orderUTxOsWithDatums = await fetchUTxOsDatums(lucid, orderUTxOs)
   const poConstants = resolvePOConstants(lucid)
@@ -263,5 +265,6 @@ export const fillOrders = async (lucid: Lucid, tx: Tx, orderRefsWithAmt: [OutRef
     }
   }
   txAppend = txAppend.readFrom([poConstants.mintUTxO, poConstants.valUTxO, pocUTxO])
-  return txAppend
+  const fees: Fees = { percentTokenFees: takerPercentageFees, flatLovelaceFees: maxTakerFee }
+  return [fees, txAppend]
 }

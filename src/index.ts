@@ -9,3 +9,4 @@ export * from "./contract.types.js";
 export * from "./constants.js";
 export * from "./api.js";
 export * from "./utils.js";
+export * from "./types.js";
