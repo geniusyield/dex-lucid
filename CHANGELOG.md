@@ -1,5 +1,11 @@
 # @geniusyield/sdk
 
+## 0.0.5
+
+### Patch Changes
+
+- relevant api functions now return charged fees
+
 ## 0.0.4
 
 ### Patch Changes
