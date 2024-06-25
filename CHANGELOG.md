@@ -1,5 +1,11 @@
 # @geniusyield/sdk
 
+## 1.0.0
+
+### Major Changes
+
+- first public release, includes updated tx validity interval logic
+
 ## 0.0.5
 
 ### Patch Changes
