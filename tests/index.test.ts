@@ -112,19 +112,23 @@ test('multiOrderFillAndCancellation', async () => {
   const walletUTxOs1 = await lucidPreprod.utxosAt(await lucidPreprod.wallet.address())
   const walletAddress = await lucidPreprod.wallet.address()
   const { stakeCredential } = lucidPreprod.utils.getAddressDetails(walletAddress)
+  const currentTime = Date.now()
+  console.log("Current time: ", currentTime)
+  const oneMinutePosix = 60 * 1000
   // Create first order.
-  const [, createOrderTx1] = await createOrder(lucidPreprod, lucidPreprod.newTx(), walletUTxOs1[0] as UTxO, await lucidPreprod.wallet.address(), 10000000n, "", askedTokenUnit, { numerator: 1n, denominator: 10n }, false, stakeCredential, undefined, undefined)
+  const [, createOrderTx1] = await createOrder(lucidPreprod, lucidPreprod.newTx(), walletUTxOs1[0] as UTxO, await lucidPreprod.wallet.address(), 10000000n, "", askedTokenUnit, { numerator: 1n, denominator: 10n }, false, stakeCredential, currentTime + oneMinutePosix, currentTime + 13 * oneMinutePosix)
   const signedCreateOrderTx1 = await (await createOrderTx1.complete()).sign().complete()
   const create1TxHash = await signedCreateOrderTx1.submit()
   console.log("create1TxHash:", create1TxHash)
   await lucidPreprod.awaitTx(create1TxHash)
   const walletUTxOs2 = await lucidPreprod.utxosAt(await lucidPreprod.wallet.address())
   // Create second order.
-  const [, createOrderTx2] = await createOrder(lucidPreprod, lucidPreprod.newTx(), walletUTxOs2[0] as UTxO, await lucidPreprod.wallet.address(), 10000000n, "", askedTokenUnit, { numerator: 1n, denominator: 2n }, false, stakeCredential, undefined, undefined)
+  const [, createOrderTx2] = await createOrder(lucidPreprod, lucidPreprod.newTx(), walletUTxOs2[0] as UTxO, await lucidPreprod.wallet.address(), 10000000n, "", askedTokenUnit, { numerator: 1n, denominator: 2n }, false, stakeCredential, currentTime, currentTime + 10 * oneMinutePosix)
   const signedCreateOrderTx2 = await (await createOrderTx2.complete()).sign().complete()
   const create2TxHash = await signedCreateOrderTx2.submit()
   console.log("create2TxHash:", create2TxHash)
   await lucidPreprod.awaitTx(create2TxHash)
+  await new Promise(resolve => setTimeout(resolve, oneMinutePosix));
   const [fillOrdersFees, fillTx] = await fillOrders(lucidPreprod, lucidPreprod.newTx(), [[{ txHash: create1TxHash, outputIndex: 0 }, 5000000n], [{ txHash: create2TxHash, outputIndex: 0 }, 6000000n]])
   // Check that the fees are correct.
   expect(fillOrdersFees.flatLovelaceFees).toBe(1000000n)

@@ -1,7 +1,7 @@
 // TODO: Module documentation.
 import { Address, Assets, Blockfrost, Credential, Data, Lucid, OutRef, Tx, UTxO, Unit, UnixTime, fromUnit } from "@anastasia-labs/lucid-cardano-fork";
 import { AssetClassD, PONftPolicyRedeemer, PartialOrderConfigDatum, PartialOrderContainedFee, PartialOrderDatum, PartialOrderFeeOutput, PartialOrderRedeemer, RationalD, OutputReferenceD, ValueD } from "./contract.types";
-import { addContainedFees, assetClassDFromUnit, assetClassDToUnit, ensure, expectedTokenName, fromAddress, fromAssets, isEqualContainedFee, mappendAssets, maxBigint, negateAssets, resolveAC, resolvePOConstants, toAddress, zeroContainedFee } from "./utils";
+import { addContainedFees, assetClassDFromUnit, assetClassDToUnit, ensure, expectedTokenName, fromAddress, fromAssets, isEqualContainedFee, mappendAssets, maxBigint, minBigint, negateAssets, resolveAC, resolvePOConstants, toAddress, zeroContainedFee } from "./utils";
 import { PartialOrderConstants } from "./constants";
 import { Fees } from "./types"
 
@@ -191,6 +191,8 @@ export const fillOrders = async (lucid: Lucid, tx: Tx, orderRefsWithAmt: [OutRef
   let maxTakerFee = 0n
   const currentTime = Date.now()
   const toInlineDatum = (utxo: UTxO) => utxo.datum ? "inline" : "asHash"
+  let validFrom: (bigint | null) = null
+  let validTo: (bigint | null) = null
   // More optimal implementation could be written but with limit of < 100 orders, this is fine.
   const orderInfos: [UTxO, PartialOrderDatum, bigint][] = orderUTxOsWithDatums.map(([orderUTxO, orderUTxOsDatum]) => {
     const fillAmount = orderRefsWithAmt.find(([ref, _]) => ref.txHash === orderUTxO.txHash && ref.outputIndex === orderUTxO.outputIndex)?.[1] || 0n;
@@ -203,15 +205,13 @@ export const fillOrders = async (lucid: Lucid, tx: Tx, orderRefsWithAmt: [OutRef
       if (orderUTxOsDatum.podStart > currentTime) {
         throw new Error("Order cannot be filled before the start time");
       }
-      // TODO: Is Lucid smart enough to handle multiple `validFrom`'s?
-      txAppend = txAppend.validFrom(Number(orderUTxOsDatum.podStart))
+      validFrom = validFrom ? maxBigint((orderUTxOsDatum.podStart), validFrom) : (orderUTxOsDatum.podStart)
     }
     if (orderUTxOsDatum.podEnd) {
       if (orderUTxOsDatum.podEnd < currentTime) {
         throw new Error("Order cannot be filled after the end time");
       }
-      // TODO: See comment above for `validFrom`.
-      txAppend = txAppend.validTo(Number(orderUTxOsDatum.podEnd))
+      validTo = validTo ? minBigint((orderUTxOsDatum.podEnd), validTo) : (orderUTxOsDatum.podEnd)
     }
     if (fillAmount === 0n) {
       throw new Error("Fill amount cannot be zero");
@@ -221,6 +221,8 @@ export const fillOrders = async (lucid: Lucid, tx: Tx, orderRefsWithAmt: [OutRef
     }
     return [orderUTxO, orderUTxOsDatum, fillAmount];
   });
+  txAppend = validFrom ? txAppend.validFrom(Number(validFrom + 5000n)) : txAppend  // Lucid doesn't seem to take enclosing slot, needed to 5 seconds as a buffer.
+  txAppend = validTo ? txAppend.validTo(Number(validTo)) : txAppend
   const buildWithFeeOutput = () => {
     for (const [orderUTxO, orderUTxOsDatum, fillAmount] of orderInfos) {
       const price = partialOrderPrice(orderUTxOsDatum, fillAmount)
