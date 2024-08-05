@@ -1,5 +1,5 @@
 // TODO: Module documentation.
-import { Data } from "@anastasia-labs/lucid-cardano-fork";
+import { Data } from "@lucid-evolution/lucid";
 
 // Reference: https://github.com/Anastasia-Labs/smart-handles-offchain/blob/main/src/core/contract.types.ts.
 // TODO: Add safe utils (datum parse etc.).
