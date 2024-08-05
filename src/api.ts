@@ -1,11 +1,11 @@
 // TODO: Module documentation.
-import { Address, Assets, Blockfrost, Credential, Data, Lucid, OutRef, Tx, UTxO, Unit, UnixTime, fromUnit } from "@anastasia-labs/lucid-cardano-fork";
+import { Address, Assets, Credential, Data, LucidEvolution, OutRef, TxBuilder, UTxO, Unit, UnixTime, credentialToAddress, fromUnit, paymentCredentialOf } from "@lucid-evolution/lucid";
 import { AssetClassD, PONftPolicyRedeemer, PartialOrderConfigDatum, PartialOrderContainedFee, PartialOrderDatum, PartialOrderFeeOutput, PartialOrderRedeemer, RationalD, OutputReferenceD, ValueD } from "./contract.types";
 import { addContainedFees, assetClassDFromUnit, assetClassDToUnit, ensure, expectedTokenName, fromAddress, fromAssets, isEqualContainedFee, mappendAssets, maxBigint, minBigint, negateAssets, resolveAC, resolvePOConstants, toAddress, zeroContainedFee } from "./utils";
 import { PartialOrderConstants } from "./constants";
 import { Fees } from "./types"
 
-export const fetchPartialOrderConfig = async (lucid: Lucid): Promise<[PartialOrderConfigDatum, UTxO]> => {
+export const fetchPartialOrderConfig = async (lucid: LucidEvolution): Promise<[PartialOrderConfigDatum, UTxO]> => {
   const poConstants = resolvePOConstants(lucid)
   const utxo = await lucid.utxoByUnit(poConstants.refNft)
   return [(Data.from(utxo.datum as string, PartialOrderConfigDatum)), utxo]
@@ -27,11 +27,11 @@ export const fetchPartialOrderConfig = async (lucid: Lucid): Promise<[PartialOrd
  * @param aStakeCred - Optional. The stake credential used to place orders at a mangled address, with payment part of validator but staking part as specified by given credential.
  * @param start - Optional. The earliest start time after which order can be filled.
  * @param end - Optional. The end time after which order can no longer be filled.
- * @returns A Promise that resolves to a Tx object.
+ * @returns A Promise that resolves to a TxBuilder object.
  * @throws Throws an error if the offer amount is not positive, if the price numerator or denominator is not positive,
  * if the offered and asked assets are the same, or if the end time is earlier than the start time.
  */
-export const createOrder = async (lucid: Lucid, tx: Tx, anUTxO: UTxO, owner: Address, offerAmt: bigint, offerAC: Unit, priceAC: Unit, price: RationalD, inlineDat: boolean, aStakeCred?: Credential, start?: UnixTime, end?: UnixTime): Promise<[Fees, Tx]> => {
+export const createOrder = async (lucid: LucidEvolution, tx: TxBuilder, anUTxO: UTxO, owner: Address, offerAmt: bigint, offerAC: Unit, priceAC: Unit, price: RationalD, inlineDat: boolean, aStakeCred?: Credential, start?: UnixTime, end?: UnixTime): Promise<[Fees, TxBuilder]> => {
   if (offerAmt <= 0n) {
     throw new Error("Offer amount must be positive.")
   }
@@ -45,8 +45,8 @@ export const createOrder = async (lucid: Lucid, tx: Tx, anUTxO: UTxO, owner: Add
     throw new Error("End time cannot be earlier than start time.");
   }
   const poConstants = resolvePOConstants(lucid)
-  const ownerCred = lucid.utils.paymentCredentialOf(owner);
-  const outAddr = lucid.utils.credentialToAddress(poConstants.valCred, aStakeCred);
+  const ownerCred = paymentCredentialOf(owner);
+  const outAddr = credentialToAddress(lucid.config().network, poConstants.valCred, aStakeCred);
   const anOutRef: OutRef = { txHash: anUTxO.txHash, outputIndex: anUTxO.outputIndex };
   const nftName = await (expectedTokenName(anOutRef));
   const nftUnit = poConstants.mintPolicyId + nftName
@@ -87,24 +87,24 @@ export const createOrder = async (lucid: Lucid, tx: Tx, anUTxO: UTxO, owner: Add
       .collectFrom([anUTxO])
       .mintAssets({ [nftUnit]: 1n }, Data.to({ txHash: { hash: anOutRef.txHash }, outputIndex: BigInt(anOutRef.outputIndex) }, PONftPolicyRedeemer))
       .readFrom([pocUTxO, poConstants.mintUTxO])
-      .payToContract(outAddr, { [datumField]: Data.to(orderDatum, PartialOrderDatum) }, placeOrderAssets)
+      .pay.ToContract(outAddr, { kind: datumField, value: Data.to(orderDatum, PartialOrderDatum) }, placeOrderAssets)
   const orderCreationFees: Fees = { percentTokenFees: resolveAC(offerAC, makerPercentageFees), flatLovelaceFees: pocDatum.pocdMakerFeeFlat }
   return [orderCreationFees, txAppended];
 }
 
 // There is likely a bug in Lucid's `datumOf` function, so we need to use this function instead.
-export async function myDatumOf(lucid: Lucid, utxo: UTxO): Promise<PartialOrderDatum> {
+export async function myDatumOf(lucid: LucidEvolution, utxo: UTxO): Promise<PartialOrderDatum> {
   let datToResolve = utxo.datum
   if (!datToResolve) {
     if (!utxo.datumHash) {
       throw new Error("This UTxO does not have a datum hash.");
     }
-    datToResolve = await lucid.provider.getDatum(utxo.datumHash);
+    datToResolve = await lucid.config().provider.getDatum(utxo.datumHash);
   }
   return Data.from(datToResolve, PartialOrderDatum);
 }
 
-const fetchUTxOsDatums = async (lucid: Lucid, utxos: UTxO[]): Promise<[UTxO, PartialOrderDatum][]> => {
+const fetchUTxOsDatums = async (lucid: LucidEvolution, utxos: UTxO[]): Promise<[UTxO, PartialOrderDatum][]> => {
   const utxosWithDatums = await Promise.all(utxos.map(async (utxo): Promise<[UTxO, PartialOrderDatum]> => {
     const datum = await myDatumOf(lucid, utxo)
     return [utxo, datum]
@@ -141,7 +141,7 @@ const expectedPaymentWithDeposit = (poConstants: PartialOrderConstants, orderUTx
  * @param orderRefs - An array of order references to cancel.
  * @returns A promise that resolves to the updated transaction object.
  */
-export const cancelOrders = async (lucid: Lucid, tx: Tx, orderRefs: OutRef[]): Promise<Tx> => {
+export const cancelOrders = async (lucid: LucidEvolution, tx: TxBuilder, orderRefs: OutRef[]): Promise<TxBuilder> => {
   const orderUTxOs = await lucid.utxosByOutRef(orderRefs)
   const orderUTxOsWithDatums = await fetchUTxOsDatums(lucid, orderUTxOs)
   const poConstants = resolvePOConstants(lucid)
@@ -159,12 +159,12 @@ export const cancelOrders = async (lucid: Lucid, tx: Tx, orderRefs: OutRef[]): P
     feeMapAcc = updateFeeCond ? feeMapAcc : feeMapAcc.set(outputRef, fromAssets(reqContainedFeeValue));
     txAppend = txAppend
       .collectFrom([orderUTxO], Data.to("PartialCancel", PartialOrderRedeemer))
-      .payToAddressWithData(toAddress(orderUTxOsDatum.podOwnerAddr, lucid), { inline: Data.to(outputRef, OutputReferenceD) }, expectedPaymentWithDeposit(poConstants, orderUTxO.assets, orderUTxOsDatum, false))
-      .addSignerKey(orderUTxOsDatum.podOwnerKey)
+      .pay.ToAddressWithData(toAddress(orderUTxOsDatum.podOwnerAddr, lucid), { kind: "inline", value: Data.to(outputRef, OutputReferenceD) }, expectedPaymentWithDeposit(poConstants, orderUTxO.assets, orderUTxOsDatum, false))
+      .addSigner(orderUTxOsDatum.podOwnerKey)
       .mintAssets({ [poConstants.mintPolicyId + orderUTxOsDatum.podNFT]: -1n }, Data.to(null, PONftPolicyRedeemer));
   }
   const [pocDatum, pocUTxO] = await fetchPartialOrderConfig(lucid)
-  txAppend = Object.keys(feeAcc).length ? txAppend.payToAddressWithData(toAddress(pocDatum.pocdFeeAddr, lucid), { asHash: Data.to({ pofdMentionedFees: feeMapAcc, pofdReservedValue: fromAssets({}), pofdSpentUTxORef: null }, PartialOrderFeeOutput) }, feeAcc) : txAppend
+  txAppend = Object.keys(feeAcc).length ? txAppend.pay.ToAddressWithData(toAddress(pocDatum.pocdFeeAddr, lucid), { kind: "asHash", value: Data.to({ pofdMentionedFees: feeMapAcc, pofdReservedValue: fromAssets({}), pofdSpentUTxORef: null }, PartialOrderFeeOutput) }, feeAcc) : txAppend
   txAppend = txAppend
     .readFrom([poConstants.mintUTxO, poConstants.valUTxO, pocUTxO])
   return txAppend;
@@ -179,7 +179,7 @@ export const cancelOrders = async (lucid: Lucid, tx: Tx, orderRefs: OutRef[]): P
  * @returns A promise that resolves to the new transaction with the filled orders.
  * @throws If the order cannot be filled before the start time, after the end time, if the fill amount is zero, or if the fill amount is greater than the offered amount.
  */
-export const fillOrders = async (lucid: Lucid, tx: Tx, orderRefsWithAmt: [OutRef, bigint][]): Promise<[Fees, Tx]> => {
+export const fillOrders = async (lucid: LucidEvolution, tx: TxBuilder, orderRefsWithAmt: [OutRef, bigint][]): Promise<[Fees, TxBuilder]> => {
   const orderUTxOs = await lucid.utxosByOutRef(orderRefsWithAmt.map(([ref, _]) => ref))
   const orderUTxOsWithDatums = await fetchUTxOsDatums(lucid, orderUTxOs)
   const poConstants = resolvePOConstants(lucid)
@@ -190,7 +190,7 @@ export const fillOrders = async (lucid: Lucid, tx: Tx, orderRefsWithAmt: [OutRef
   let takerPercentageFees: Assets = {}
   let maxTakerFee = 0n
   const currentTime = Date.now()
-  const toInlineDatum = (utxo: UTxO) => utxo.datum ? "inline" : "asHash"
+  const toInlineDatum = (utxo: UTxO): "asHash" | "inline" => utxo.datum ? "inline" : "asHash"
   let validFrom: (bigint | null) = null
   let validTo: (bigint | null) = null
   // More optimal implementation could be written but with limit of < 100 orders, this is fine.
@@ -234,18 +234,18 @@ export const fillOrders = async (lucid: Lucid, tx: Tx, orderRefsWithAmt: [OutRef
         const expectedAssetsOut = expectedPaymentWithDeposit(poConstants, orderUTxO.assets, orderUTxOsDatum, true)
         txAppend = txAppend
           .collectFrom([orderUTxO], Data.to("CompleteFill", PartialOrderRedeemer))
-          .payToAddressWithData(toAddress(orderUTxOsDatum.podOwnerAddr, lucid), { inline: Data.to(outputRef, OutputReferenceD) }, expectedAssetsOut)
+          .pay.ToAddressWithData(toAddress(orderUTxOsDatum.podOwnerAddr, lucid), { kind: "inline", value: Data.to(outputRef, OutputReferenceD) }, expectedAssetsOut)
           .mintAssets({ [poConstants.mintPolicyId + orderUTxOsDatum.podNFT]: -1n }, Data.to(null, PONftPolicyRedeemer))
       } else {
         const od = { ...orderUTxOsDatum, podOfferedAmount: orderUTxOsDatum.podOfferedAmount - fillAmount, podPartialFills: orderUTxOsDatum.podPartialFills + 1n, podContainedPayment: orderUTxOsDatum.podContainedPayment + (price[assetClassDToUnit(orderUTxOsDatum.podAskedAsset)] ?? 0n) }
         const expectedValueOut = mappendAssets(mappendAssets(orderUTxO.assets, price), negateAssets({ [assetClassDToUnit(orderUTxOsDatum.podOfferedAsset)]: fillAmount }))
         txAppend = txAppend
           .collectFrom([orderUTxO], Data.to({ PartialFill: [fillAmount] }, PartialOrderRedeemer))
-          .payToContract(orderUTxO.address, { [toInlineDatum(orderUTxO)]: Data.to(od, PartialOrderDatum) }, expectedValueOut)
+          .pay.ToContract(orderUTxO.address, { kind: toInlineDatum(orderUTxO), value: Data.to(od, PartialOrderDatum) }, expectedValueOut)
       }
     }
     feeAcc = mappendAssets(mappendAssets(feeAcc, { lovelace: maxTakerFee }), takerPercentageFees)
-    txAppend = Object.keys(feeAcc).length ? txAppend.payToAddressWithData(toAddress(pocDatum.pocdFeeAddr, lucid), { asHash: Data.to({ pofdMentionedFees: feeMapAcc, pofdReservedValue: fromAssets({}), pofdSpentUTxORef: null }, PartialOrderFeeOutput) }, feeAcc) : txAppend
+    txAppend = Object.keys(feeAcc).length ? txAppend.pay.ToAddressWithData(toAddress(pocDatum.pocdFeeAddr, lucid), { kind: "asHash", value: Data.to({ pofdMentionedFees: feeMapAcc, pofdReservedValue: fromAssets({}), pofdSpentUTxORef: null }, PartialOrderFeeOutput) }, feeAcc) : txAppend
   }
 
   const buildWithoutFeeOutput = ([orderUTxO, orderUTxOsDatum, fillAmount]: [UTxO, PartialOrderDatum, bigint]) => {
@@ -255,7 +255,7 @@ export const fillOrders = async (lucid: Lucid, tx: Tx, orderRefsWithAmt: [OutRef
     const expectedValueOut = mappendAssets(mappendAssets(mappendAssets(orderUTxO.assets, price), containedFeeToAssetsM(tf, orderUTxOsDatum.podOfferedAsset, orderUTxOsDatum.podAskedAsset)), negateAssets({ [assetClassDToUnit(orderUTxOsDatum.podOfferedAsset)]: fillAmount }))
     txAppend = txAppend
       .collectFrom([orderUTxO], Data.to({ PartialFill: [fillAmount] }, PartialOrderRedeemer))
-      .payToContract(orderUTxO.address, { [toInlineDatum(orderUTxO)]: Data.to(od, PartialOrderDatum) }, expectedValueOut)
+      .pay.ToContract(orderUTxO.address, { kind: toInlineDatum(orderUTxO), value: Data.to(od, PartialOrderDatum) }, expectedValueOut)
   }
   if (orderInfos.some(([_, orderUTxOsDatum, fillAmount]) => fillAmount === orderUTxOsDatum.podOfferedAmount)) {
     buildWithFeeOutput();

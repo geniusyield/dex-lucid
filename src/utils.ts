@@ -1,4 +1,4 @@
-import { Address, Assets, Lucid, OutRef, Unit, fromHex, fromUnit, getAddressDetails, toHex, toUnit } from "@anastasia-labs/lucid-cardano-fork";
+import { Address, Assets, LucidEvolution, OutRef, Unit, fromHex, fromUnit, getAddressDetails, toHex, toUnit, keyHashToCredential, scriptHashToCredential, credentialToAddress } from "@lucid-evolution/lucid";
 import { AddressD, AssetClassD, OutputReferenceD, PartialOrderContainedFee, ValueD } from "./contract.types";
 import { PartialOrderConstants, po } from "./constants";
 
@@ -69,14 +69,14 @@ export function fromAddress(address: Address): AddressD {
   };
 }
 
-export function toAddress(address: AddressD, lucid: Lucid): Address {
+export function toAddress(address: AddressD, lucid: LucidEvolution): Address {
   const paymentCredential = (() => {
     if ("PublicKeyCredential" in address.paymentCredential) {
-      return lucid.utils.keyHashToCredential(
+      return keyHashToCredential(
         address.paymentCredential.PublicKeyCredential[0]
       );
     } else {
-      return lucid.utils.scriptHashToCredential(
+      return scriptHashToCredential(
         address.paymentCredential.ScriptCredential[0]
       );
     }
@@ -85,11 +85,11 @@ export function toAddress(address: AddressD, lucid: Lucid): Address {
     if (!address.stakeCredential) return undefined;
     if ("Inline" in address.stakeCredential) {
       if ("PublicKeyCredential" in address.stakeCredential.Inline[0]) {
-        return lucid.utils.keyHashToCredential(
+        return keyHashToCredential(
           address.stakeCredential.Inline[0].PublicKeyCredential[0]
         );
       } else {
-        return lucid.utils.scriptHashToCredential(
+        return scriptHashToCredential(
           address.stakeCredential.Inline[0].ScriptCredential[0]
         );
       }
@@ -97,7 +97,7 @@ export function toAddress(address: AddressD, lucid: Lucid): Address {
       return undefined;
     }
   })();
-  return lucid.utils.credentialToAddress(paymentCredential, stakeCredential);
+  return credentialToAddress(lucid.config().network, paymentCredential, stakeCredential);
 }
 
 export function fromOutRef(outRef: OutRef): OutputReferenceD {
@@ -126,8 +126,8 @@ export function assetClassDToUnit(ac: AssetClassD): Unit {
  * @returns The PartialOrderConstants object corresponding to the Lucid network.
  * @throws {Error} If the Lucid network is unsupported.
  */
-export function resolvePOConstants(lucid: Lucid): PartialOrderConstants {
-  const nid = lucid.network
+export function resolvePOConstants(lucid: LucidEvolution): PartialOrderConstants {
+  const nid = lucid.config().network
   if (nid === 'Mainnet') {
     return po.mainnet
   } else if (nid === 'Preprod') {
