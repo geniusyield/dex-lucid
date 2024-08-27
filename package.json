@@ -18,6 +18,6 @@
     "vitest": "^1.6.0"
   },
   "dependencies": {
-    "@lucid-evolution/lucid": "^0.3.2"
+    "@lucid-evolution/lucid": "^0.3.15"
   }
 }
