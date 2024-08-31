@@ -1,5 +1,11 @@
 # @geniusyield/sdk
 
+## 2.0.0
+
+### Major Changes
+
+- update to @lucid-evolution/lucid
+
 ## 1.0.0
 
 ### Major Changes
