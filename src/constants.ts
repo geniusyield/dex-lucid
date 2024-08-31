@@ -1,5 +1,5 @@
 // TODO: Module documentation.
-import { Address, Credential, PolicyId, UTxO, Unit } from "@anastasia-labs/lucid-cardano-fork";
+import { Address, Credential, PolicyId, UTxO, Unit } from "@lucid-evolution/lucid";
 
 /**
  * Represents various constants relevant to DEX.

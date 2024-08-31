@@ -1,4 +1,4 @@
-import { Assets } from "@anastasia-labs/lucid-cardano-fork";
+import { Assets } from "@lucid-evolution/lucid";
 
 export interface Fees {
   percentTokenFees: Assets,

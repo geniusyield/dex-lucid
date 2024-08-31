@@ -1,4 +1,4 @@
-import { Constr, Data, Lucid, Maestro, UTxO } from "@anastasia-labs/lucid-cardano-fork";
+import { Constr, Data, getAddressDetails, Lucid, Maestro, UTxO } from "@lucid-evolution/lucid";
 import { fetchPartialOrderConfig, decimalToHexByte, expectedTokenName, createOrder, PartialOrderRedeemer, negateAssets, cancelOrders, fillOrders } from '../src/index'
 import { test, expect } from 'vitest'
 
@@ -11,11 +11,11 @@ const maestroPreprodKey = import.meta.env.VITE_MAESTRO_PREPROD_KEY as string;
 const walletPreprodSeedPhrase = import.meta.env.VITE_PREPROD_SEED_PHRASE as string;
 const askedTokenUnit = import.meta.env.VITE_ASKED_TOKEN_UNIT as string;
 
-const lucidMainnet = await Lucid.new(
+const lucidMainnet = await Lucid(
   new Maestro({ network: "Mainnet", apiKey: maestroMainnetKey, turboSubmit: false }),
   "Mainnet",
 );
-const lucidPreprod = await Lucid.new(
+const lucidPreprod = await Lucid(
   new Maestro({ network: "Preprod", apiKey: maestroPreprodKey, turboSubmit: false }),
   "Preprod",
 );
@@ -84,16 +84,16 @@ test('negateAssets', () => {
 });
 
 test('singleOrderPartialFill', async () => {
-  lucidPreprod.selectWalletFromSeed(walletPreprodSeedPhrase)
-  const walletUTxOs1 = await lucidPreprod.utxosAt(await lucidPreprod.wallet.address())
-  const walletAddress = await lucidPreprod.wallet.address()
-  const { stakeCredential } = lucidPreprod.utils.getAddressDetails(walletAddress)
+  lucidPreprod.selectWallet.fromSeed(walletPreprodSeedPhrase)
+  const walletAddress = await lucidPreprod.wallet().address()
+  const walletUTxOs1 = await lucidPreprod.utxosAt(walletAddress)
+  const { stakeCredential } = getAddressDetails(walletAddress)
   // Create first order.
-  const [createOrderFees, createOrderTx1] = await createOrder(lucidPreprod, lucidPreprod.newTx(), walletUTxOs1[0] as UTxO, await lucidPreprod.wallet.address(), 10000000n, "", askedTokenUnit, { numerator: 1n, denominator: 10n }, false, stakeCredential, undefined, undefined)
+  const [createOrderFees, createOrderTx1] = await createOrder(lucidPreprod, lucidPreprod.newTx(), walletUTxOs1[0] as UTxO, walletAddress, 10000000n, "", askedTokenUnit, { numerator: 1n, denominator: 10n }, false, stakeCredential, undefined, undefined)
   // Check that the fees are correct.
   expect(createOrderFees.flatLovelaceFees).toBe(1000000n)
   expect(createOrderFees.percentTokenFees.lovelace).toBe(30000n)
-  const signedCreateOrderTx1 = await (await createOrderTx1.complete()).sign().complete()
+  const signedCreateOrderTx1 = await (await createOrderTx1.complete()).sign.withWallet().complete()
   const create1TxHash = await signedCreateOrderTx1.submit()
   console.log("create1TxHash:", create1TxHash)
   await lucidPreprod.awaitTx(create1TxHash)
@@ -101,30 +101,30 @@ test('singleOrderPartialFill', async () => {
   // Check that the fees are correct.
   expect(fillOrdersFees.flatLovelaceFees).toBe(1000000n)
   expect(fillOrdersFees.percentTokenFees?.[askedTokenUnit]).toBe(1500n)
-  const signedFillTx = await (await fillTx.complete()).sign().complete()
+  const signedFillTx = await (await fillTx.complete()).sign.withWallet().complete()
   const fillTxHash = await signedFillTx.submit()
   console.log("fillTxHash:", fillTxHash)
   await lucidPreprod.awaitTx(fillTxHash)
 })
 
 test('multiOrderFillAndCancellation', async () => {
-  lucidPreprod.selectWalletFromSeed(walletPreprodSeedPhrase)
-  const walletUTxOs1 = await lucidPreprod.utxosAt(await lucidPreprod.wallet.address())
-  const walletAddress = await lucidPreprod.wallet.address()
-  const { stakeCredential } = lucidPreprod.utils.getAddressDetails(walletAddress)
+  lucidPreprod.selectWallet.fromSeed(walletPreprodSeedPhrase)
+  const walletAddress = await lucidPreprod.wallet().address()
+  const walletUTxOs1 = await lucidPreprod.utxosAt(walletAddress)
+  const { stakeCredential } = getAddressDetails(walletAddress)
   const currentTime = Date.now()
   console.log("Current time: ", currentTime)
   const oneMinutePosix = 60 * 1000
   // Create first order.
-  const [, createOrderTx1] = await createOrder(lucidPreprod, lucidPreprod.newTx(), walletUTxOs1[0] as UTxO, await lucidPreprod.wallet.address(), 10000000n, "", askedTokenUnit, { numerator: 1n, denominator: 10n }, false, stakeCredential, currentTime + oneMinutePosix, currentTime + 13 * oneMinutePosix)
-  const signedCreateOrderTx1 = await (await createOrderTx1.complete()).sign().complete()
+  const [, createOrderTx1] = await createOrder(lucidPreprod, lucidPreprod.newTx(), walletUTxOs1[0] as UTxO, walletAddress, 10000000n, "", askedTokenUnit, { numerator: 1n, denominator: 10n }, false, stakeCredential, currentTime + oneMinutePosix, currentTime + 13 * oneMinutePosix)
+  const signedCreateOrderTx1 = await (await createOrderTx1.complete()).sign.withWallet().complete()
   const create1TxHash = await signedCreateOrderTx1.submit()
   console.log("create1TxHash:", create1TxHash)
   await lucidPreprod.awaitTx(create1TxHash)
-  const walletUTxOs2 = await lucidPreprod.utxosAt(await lucidPreprod.wallet.address())
+  const walletUTxOs2 = await lucidPreprod.utxosAt(walletAddress)
   // Create second order.
-  const [, createOrderTx2] = await createOrder(lucidPreprod, lucidPreprod.newTx(), walletUTxOs2[0] as UTxO, await lucidPreprod.wallet.address(), 10000000n, "", askedTokenUnit, { numerator: 1n, denominator: 2n }, false, stakeCredential, currentTime, currentTime + 10 * oneMinutePosix)
-  const signedCreateOrderTx2 = await (await createOrderTx2.complete()).sign().complete()
+  const [, createOrderTx2] = await createOrder(lucidPreprod, lucidPreprod.newTx(), walletUTxOs2[0] as UTxO, walletAddress, 10000000n, "", askedTokenUnit, { numerator: 1n, denominator: 2n }, false, stakeCredential, currentTime, currentTime + 10 * oneMinutePosix)
+  const signedCreateOrderTx2 = await (await createOrderTx2.complete()).sign.withWallet().complete()
   const create2TxHash = await signedCreateOrderTx2.submit()
   console.log("create2TxHash:", create2TxHash)
   await lucidPreprod.awaitTx(create2TxHash)
@@ -133,12 +133,12 @@ test('multiOrderFillAndCancellation', async () => {
   // Check that the fees are correct.
   expect(fillOrdersFees.flatLovelaceFees).toBe(1000000n)
   expect(fillOrdersFees.percentTokenFees?.[askedTokenUnit]).toBe(10500n)
-  const signedFillTx = await (await fillTx.complete()).sign().complete()
+  const signedFillTx = await (await fillTx.complete()).sign.withWallet().complete()
   const fillTxHash = await signedFillTx.submit()
   console.log("fillTxHash:", fillTxHash)
   await lucidPreprod.awaitTx(fillTxHash)
   const cancelTx = await cancelOrders(lucidPreprod, lucidPreprod.newTx(), [{ txHash: fillTxHash, outputIndex: 0 }, { txHash: fillTxHash, outputIndex: 0 }])
-  const signedCancelTx = await (await cancelTx.complete()).sign().complete()
+  const signedCancelTx = await (await cancelTx.complete()).sign.withWallet().complete()
   const cancelTxHash = await signedCancelTx.submit()
   console.log("cancelTxHash:", cancelTxHash)
 })

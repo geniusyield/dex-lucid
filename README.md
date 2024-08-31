@@ -1,6 +1,6 @@
 # GeniusYield Lucid SDK
 
-Provides [Lucid](https://lucid.spacebudz.io/) SDK to interact with [GeniusYield](https://www.geniusyield.co/?lng=en) DEX. We use fork of Lucid by Anastasia Labs, namely, [`@anastasia-labs/lucid-cardano-fork`](https://www.npmjs.com/package/@anastasia-labs/lucid-cardano-fork).
+Provides [@lucid-evolution/lucid](https://www.npmjs.com/package/@lucid-evolution/lucid) SDK to interact with [GeniusYield](https://www.geniusyield.co/?lng=en) DEX.
 
 ## Install
 
