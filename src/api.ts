@@ -160,7 +160,7 @@ export const cancelOrders = async (lucid: LucidEvolution, tx: TxBuilder, orderRe
     txAppend = txAppend
       .collectFrom([orderUTxO], Data.to("PartialCancel", PartialOrderRedeemer))
       .pay.ToAddressWithData(toAddress(orderUTxOsDatum.podOwnerAddr, lucid), { kind: "inline", value: Data.to(outputRef, OutputReferenceD) }, expectedPaymentWithDeposit(poConstants, orderUTxO.assets, orderUTxOsDatum, false))
-      .addSigner(orderUTxOsDatum.podOwnerKey)
+      .addSignerKey(orderUTxOsDatum.podOwnerKey)
       .mintAssets({ [poConstants.mintPolicyId + orderUTxOsDatum.podNFT]: -1n }, Data.to(null, PONftPolicyRedeemer));
   }
   const [pocDatum, pocUTxO] = await fetchPartialOrderConfig(lucid)
