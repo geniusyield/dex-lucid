@@ -15,7 +15,7 @@
     "tsup": "^8.0.2",
     "typedoc": "^0.25.13",
     "typescript": "^5.4.5",
-    "vitest": "^1.6.0"
+    "vitest": "^4.1.0"
   },
   "dependencies": {
     "@lucid-evolution/lucid": "^0.3.19"
